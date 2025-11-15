@@ -1836,8 +1836,19 @@ class App {
      * Gera pessoa fictícia
      */
     generatePerson() {
-        const names = ['João', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana'];
-        const surnames = ['Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira'];
+const names = [
+  'João', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana',
+  'Rafael', 'Beatriz', 'André', 'Fernanda', 'Gabriel', 'Larissa', 'Bruno',
+  'Camila', 'Diego', 'Patrícia', 'Rodrigo', 'Natália', 'Felipe', 'Aline',
+  'Gustavo', 'Isabela', 'Thiago', 'Renata', 'Eduardo', 'Carolina'
+];
+const surnames = [
+  'Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira',
+  'Gomes', 'Ribeiro', 'Almeida', 'Pereira', 'Rodrigues', 'Martins',
+  'Barbosa', 'Araújo', 'Cardoso', 'Melo', 'Correia', 'Teixeira', 'Dias',
+  'Nunes', 'Batista', 'Freitas', 'Vieira', 'Rocha'
+];
+
         
         const name = names[Math.floor(Math.random() * names.length)] + ' ' + 
                     surnames[Math.floor(Math.random() * surnames.length)];
