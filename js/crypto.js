@@ -2,17 +2,17 @@
 
 /**
  * Crypto Module
- * Operações de criptografia usando Web Crypto API
+ * Cryptographic operations using Web Crypto API
  */
 const Crypto = {
-    // Configurações de segurança
-    PBKDF2_ITERATIONS: 300000,  // 300k iterações
+    // Security settings
+    PBKDF2_ITERATIONS: 300000,  // 300k iterations
     SALT_LENGTH: 32,
     IV_LENGTH: 16,
     TAG_LENGTH: 128,
     
     /**
-     * Verifica se Web Crypto está disponível
+     * Checks if Web Crypto is available
      */
     isSupported() {
         return typeof crypto !== 'undefined' && 
@@ -21,18 +21,18 @@ const Crypto = {
     },
     
     /**
-     * Gera salt aleatório seguro
+     * Generates a secure random salt
      */
     generateSalt() {
         return crypto.getRandomValues(new Uint8Array(this.SALT_LENGTH));
     },
     
     /**
-     * Deriva chave da senha usando PBKDF2
-     * A senha é imediatamente descartada após derivação
+     * Derives a key from the password using PBKDF2
+     * The password is immediately discarded after derivation
      */
     async deriveKey(password, salt) {
-        // Validações de entrada
+        // Input validations
         if (!password || typeof password !== 'string') {
             throw new Error('Password inválida');
         }
@@ -41,18 +41,18 @@ const Crypto = {
         }
         
         const enc = new TextEncoder();
-        const passwordBuffer = enc.encode(password);
+        const pwdBuffer = enc.encode(password);
         
-        // Importa senha como chave
-        const baseKey = await crypto.subtle.importKey(
+        // Imports password as a key
+        const bKey = await crypto.subtle.importKey(
             'raw',
-            passwordBuffer,
+            pwdBuffer,
             'PBKDF2',
             false,
             ['deriveBits', 'deriveKey']
         );
         
-        // Deriva chave AES
+        // Derives AES key
         const key = await crypto.subtle.deriveKey(
             {
                 name: 'PBKDF2',
@@ -60,34 +60,34 @@ const Crypto = {
                 iterations: this.PBKDF2_ITERATIONS,
                 hash: 'SHA-256'
             },
-            baseKey,
+            bKey,
             { name: 'AES-GCM', length: 256 },
-            false,  // Não exportável
+            false,  // Not exportable
             ['encrypt', 'decrypt']
         );
         
-        // Limpa buffer da senha - CORRIGIDO
+        // Clears the password buffer - FIXED
         if (typeof Security !== 'undefined' && Security.zeroize) {
-            Security.zeroize(passwordBuffer);
+            Security.zeroize(pwdBuffer);
         } else {
-            passwordBuffer.fill(0);
+            pwdBuffer.fill(0);
         }
         
         return key;
     },
     
     /**
-     * Criptografa dados com AES-GCM
-     * Usa IV único e AAD para integridade
+     * Encrypts data with AES-GCM
+     * Uses a unique IV and AAD for integrity
      */
     async encrypt(data, key) {
         const enc = new TextEncoder();
         const plaintext = enc.encode(JSON.stringify(data));
         
-        // IV aleatório único
+        // Unique random IV
         const iv = crypto.getRandomValues(new Uint8Array(this.IV_LENGTH));
         
-        // Additional Authenticated Data - MELHORADO
+        // Additional Authenticated Data - IMPROVED
         const aadData = {
             version: 'VAULT_V1',
             timestamp: Date.now(),
@@ -95,8 +95,8 @@ const Crypto = {
         };
         const aad = enc.encode(JSON.stringify(aadData));
         
-        // Criptografa
-        const ciphertext = await crypto.subtle.encrypt(
+        // Encrypts
+        const ciphertxt = await crypto.subtle.encrypt(
             {
                 name: 'AES-GCM',
                 iv: iv,
@@ -107,27 +107,27 @@ const Crypto = {
             plaintext
         );
         
-        // Retorna tudo necessário para descriptografar
+        // Returns everything needed to decrypt
         return {
             iv: Array.from(iv),
             aad: Array.from(aad),
-            data: Array.from(new Uint8Array(ciphertext))
+            data: Array.from(new Uint8Array(ciphertxt))
         };
     },
     
     /**
-     * Descriptografa dados com AES-GCM
-     * Valida integridade via AAD
+     * Decrypts data with AES-GCM
+     * Validates integrity via AAD
      */
-    async decrypt(encryptedData, key) {
-        if (!encryptedData || !encryptedData.iv || !encryptedData.data) {
+    async decrypt(encData, key) {
+        if (!encData || !encData.iv || !encData.data) {
             return null;
         }
         
         try {
-            const iv = new Uint8Array(encryptedData.iv);
-            const aad = new Uint8Array(encryptedData.aad || []);
-            const ciphertext = new Uint8Array(encryptedData.data);
+            const iv = new Uint8Array(encData.iv);
+            const aad = new Uint8Array(encData.aad || []);
+            const ciphertxt = new Uint8Array(encData.data);
             
             const plaintext = await crypto.subtle.decrypt(
                 {
@@ -137,13 +137,13 @@ const Crypto = {
                     tagLength: this.TAG_LENGTH
                 },
                 key,
-                ciphertext
+                ciphertxt
             );
             
             const dec = new TextDecoder();
             return JSON.parse(dec.decode(plaintext));
         } catch (e) {
-            // Falha na descriptografia ou validação
+            // Decryption or validation failure
             return null;
         }
     }

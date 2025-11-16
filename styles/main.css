@@ -8,10 +8,10 @@
 :root {
     --bg: #111111;
     --bg-sec: #2C2C2C;
-    --bg-card: #7A7A7A;
-    --border: #A5A5A5;
-    --txt: ##F2F2F2;
-    --txt-sec: #8892a6;
+    --bg-card: #555555;
+    --border: #7A7A7A;
+    --txt: #A5A5A5;
+    --txt-sec: #A5A5A5;
     --accent: #4c6ef5;
     --accent-hover: #5c7cfa;
     --danger: #f03e3e;

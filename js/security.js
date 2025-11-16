@@ -2,29 +2,29 @@
 
 /**
  * Security Module
- * Validação de inputs e rate limiting
+ * Input validation and rate limiting
  */
 const Security = {
     /**
-     * Valida input contra XSS e injeções
-     * Bloqueia: tags HTML, javascript:, data:, eventos, etc.
+     * Validates input against XSS and injections
+     * Blocks: HTML tags, javascript:, data:, events, etc.
      */
     validate(str, maxLen = 1000) {
         if (typeof str !== 'string') return false;
         if (str.length > maxLen) return false;
         
-        // Regex para detectar tentativas de XSS
+        // Regex to detect XSS attempts
         const dangerous = [
-            /<[^>]*>/gi,           // Qualquer tag HTML
+            /<[^>]*>/gi,           // Any HTML tag
             /javascript:/gi,        // javascript: protocol
             /on\w+\s*=/gi,         // Event handlers
-            /data:[^,]*script/gi,  // data: URLs com script
+            /data:[^,]*script/gi,  // data: URLs with script
             /<script/gi,           // Script tags
             /<iframe/gi,           // iframes
             /<object/gi,           // objects
             /<embed/gi,            // embeds
-            /<img/gi,              // images (podem ter onerror)
-            /<svg/gi,              // SVG (pode conter scripts)
+            /<img/gi,              // images (can have onerror)
+            /<svg/gi,              // SVG (can contain scripts)
             /eval\s*\(/gi,         // eval()
             /expression\s*\(/gi,   // CSS expressions
             /import\s+/gi,         // ES6 imports
@@ -39,7 +39,7 @@ const Security = {
     },
     
     /**
-     * Rate limiting para prevenir força bruta
+     * Rate limiting to prevent brute force
      */
     attempts: new Map(),
     
@@ -57,15 +57,15 @@ const Security = {
     },
     
     /**
-     * Limpa dados sensíveis da memória
+     * Clears sensitive data from memory
      */
     zeroize(obj) {
         if (typeof obj === 'string') {
-            // Strings são imutáveis em JS, melhor que podemos fazer
+            // Strings are immutable in JS, the best we can do
             obj = null;
         } else if (obj instanceof Uint8Array) {
-            crypto.getRandomValues(obj); // Sobrescreve com random
-            obj.fill(0); // Depois zera
+            crypto.getRandomValues(obj); // Overwrites with random
+            obj.fill(0); // Then zeros out
         } else if (obj && typeof obj === 'object') {
             for (const key in obj) {
                 if (obj.hasOwnProperty(key)) {

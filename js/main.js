@@ -2,18 +2,18 @@
 
 /**
  * Main Entry Point
- * Inicializa a aplicação
+ * Initializes the application
  */
 const app = new App();
 
-// Verificação periódica de expiração de autenticação
+// Periodically checks for authentication expiration
 setInterval(() => {
     if (app.store && !app.store.isAuthenticated() && app.store.vault) {
-        // Se autenticação expirou, redireciona para tela de login
+        // If authentication has expired, redirects to the login screen
         app.store.lock();
         location.reload();
     }
-}, 5000); // Verifica a cada 5 segundos
+}, 5000); // Checks every 5 seconds
 
 window.addEventListener('load', () => {
     setTimeout(() => {

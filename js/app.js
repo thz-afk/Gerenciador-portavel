@@ -13,16 +13,16 @@ class App {
     }
     
     
-     // Inicializa aplicação
+     // Initializes the application
      
     init() {
         this.attachEventListeners();
         
         if (this.store.exists()) {
-            // Verifica se há sessão válida salva
+            // Checks if there is a valid saved session
             if (this.store.hasValidSession()) {
-                // Sessão ainda válida, mas precisa descriptografar
-                // Mostra mensagem indicando que pode continuar
+                // Session still valid, but needs to be decrypted
+                // Shows a message indicating that it can continue
                 this.showLoginWithSession();
             } else {
                 this.showLogin();
@@ -33,7 +33,7 @@ class App {
     }
     
     
-     // Mostra tela de login com indicação de sessão ativa
+     // Shows login screen with active session indication
      
     showLoginWithSession() {
         const msg = document.getElementById('authMsg');
@@ -44,8 +44,8 @@ class App {
     }
     
     /**
-     * Anexa todos event listeners
-     * Evita inline handlers para CSP
+     * Attaches all event listeners
+     * Avoids inline handlers for CSP
      */
     attachEventListeners() {
         // Auth form
@@ -79,7 +79,7 @@ class App {
         this.attachButtonListener('showSavedPersonsBtn', () => this.showSavedPersons());
         this.attachButtonListener('saveConfigBtn', () => this.saveConfig());
         
-        // Inicializa timer de sessão
+        // Initializes session timer
         this.startSessionTimer();
         
         // Modal close buttons
@@ -107,7 +107,7 @@ class App {
     }
     
     /**
-     * Mostra tela de login
+     * Shows login screen
      */
     showLogin() {
         const authMsg = document.getElementById('authMsg');
@@ -120,7 +120,7 @@ class App {
     }
     
     /**
-     * Mostra tela de registro
+     * Shows registration screen
      */
     showRegister() {
         const authMsg = document.getElementById('authMsg');
@@ -133,7 +133,7 @@ class App {
     }
     
     /**
-     * Processa autenticação
+     * Processes authentication
      */
     async handleAuth(e) {
         e.preventDefault();
@@ -144,39 +144,39 @@ class App {
             return;
         }
         
-        const passwordInput = document.getElementById('masterPwd');
-        const confirmInput = document.getElementById('confirmPwd');
+        const pwdInput = document.getElementById('masterPwd');
+        const confInput = document.getElementById('confirmPwd');
         const btn = document.getElementById('authBtn');
         
-        const password = passwordInput.value;
-        const confirm = confirmInput ? confirmInput.value : '';
+        const password = pwdInput.value;
+        const confirm = confInput ? confInput.value : '';
         
-        // Validação
+        // Validation
         if (!Security.validate(password, 128)) {
             this.showToast('Senha contém caracteres inválidos', 'error');
             return;
         }
         
-        // Desabilita botão durante processamento
+        // Disables button during processing
         btn.disabled = true;
         
         try {
-            // Verifica se sessão deve ser estendida (30 minutos)
-            const extendSession = document.getElementById('extendSession');
-            let sessionDuration = extendSession && extendSession.checked ? 1800000 : 60000; // 30 minutos ou 1 minuto
+            // Checks if the session should be extended (30 minutes)
+            const extSession = document.getElementById('extendSession');
+            let sessDuration = extSession && extSession.checked ? 1800000 : 60000; // 30 minutos ou 1 minuto
             
-            // Se já há sessão válida, preserva o tempo restante
+            // If there is already a valid session, preserves the remaining time
             if (this.store.hasValidSession()) {
-                const remaining = this.store.getSessionTimeRemaining();
-                if (remaining > 0) {
-                    // Usa o tempo restante + nova duração escolhida
-                    sessionDuration = remaining + (extendSession && extendSession.checked ? 1800000 : 60000);
+                const rem = this.store.getSessionTimeRemaining();
+                if (rem > 0) {
+                    // Uses the remaining time + new chosen duration
+                    sessDuration = rem + (extSession && extSession.checked ? 1800000 : 60000);
                 }
             }
             
             if (this.store.exists()) {
                 // Login
-                const success = await this.store.openVault(password, sessionDuration);
+                const success = await this.store.openVault(password, sessDuration);
                 
                 if (success) {
                     this.enterDashboard();
@@ -184,25 +184,25 @@ class App {
                     this.showToast('Senha incorreta', 'error');
                 }
             } else {
-                // Registro
+                // Registration
                 if (password !== confirm) {
                     this.showToast('Senhas não coincidem', 'error');
                     return;
                 }
                 
-                await this.store.createVault(password, sessionDuration);
+                await this.store.createVault(password, sessDuration);
                 this.enterDashboard();
             }
         } finally {
-            // Limpa campos e reabilita botão
-            passwordInput.value = '';
-            if (confirmInput) confirmInput.value = '';
+            // Clears fields and re-enables the button
+            pwdInput.value = '';
+            if (confInput) confInput.value = '';
             btn.disabled = false;
         }
     }
     
     /**
-     * Processa re-autenticação
+     * Processes re-authentication
      */
     async handleReAuth(e) {
         e.preventDefault();
@@ -212,8 +212,8 @@ class App {
             return;
         }
         
-        const passwordInput = document.getElementById('authPwd');
-        const password = passwordInput.value;
+        const pwdInput = document.getElementById('authPwd');
+        const password = pwdInput.value;
         
         if (!Security.validate(password, 128)) {
             this.showToast('Senha inválida', 'error');
@@ -225,7 +225,7 @@ class App {
         if (success) {
             this.closeModal('authModal');
             
-            // Executa ação pendente
+            // Executes pending action
             if (this.pendingAction) {
                 this.pendingAction();
                 this.pendingAction = null;
@@ -236,14 +236,14 @@ class App {
             this.showToast('Senha incorreta', 'error');
         }
         
-        passwordInput.value = '';
+        pwdInput.value = '';
     }
     
     /**
-     * Entra no dashboard
+     * Enters the dashboard
      */
     enterDashboard() {
-        // Verifica autenticação antes de entrar no dashboard
+        // Checks authentication before entering the dashboard
         if (!this.store.isAuthenticated()) {
             this.showToast('Autenticação necessária', 'error');
             return;
@@ -256,82 +256,82 @@ class App {
         this.loadPasswords();
         this.loadNotes();
         
-        // Inicia timer de sessão
+        // Starts session timer
         this.startSessionTimer();
         
         this.showToast('Bem-vindo!', 'success');
     }
     
     /**
-     * Inicia timer de sessão
+     * Starts session timer
      */
     startSessionTimer() {
-        // Limpa timer anterior se existir
+        // Clears previous timer if it exists
         if (this.sessionTimerInterval) {
             clearInterval(this.sessionTimerInterval);
         }
         
-        // Atualiza imediatamente
+        // Updates immediately
         this.updateSessionTimer();
         
-        // Atualiza a cada segundo
+        // Updates every second
         this.sessionTimerInterval = setInterval(() => {
             this.updateSessionTimer();
         }, 1000);
     }
     
     /**
-     * Atualiza display do timer de sessão
+     * Updates the session timer display
      */
     updateSessionTimer() {
-        const timerDisplay = document.getElementById('timerDisplay');
+        const timerDisp = document.getElementById('timerDisplay');
         const extendBtn = document.getElementById('extendSessionBtn');
-        const sessionTimer = document.getElementById('sessionTimer');
+        const sessTimer = document.getElementById('sessionTimer');
         
-        if (!timerDisplay || !extendBtn || !sessionTimer) return;
+        if (!timerDisp || !extendBtn || !sessTimer) return;
         
         if (!this.store.isAuthenticated()) {
-            timerDisplay.textContent = 'Expirada';
-            timerDisplay.style.color = 'var(--danger)';
+            timerDisp.textContent = 'Expirada';
+            timerDisp.style.color = 'var(--danger)';
             extendBtn.disabled = true;
             return;
         }
         
-        const remaining = this.store.getSessionTimeRemaining();
+        const rem = this.store.getSessionTimeRemaining();
         
-        if (remaining <= 0) {
-            timerDisplay.textContent = 'Expirada';
-            timerDisplay.style.color = 'var(--danger)';
+        if (rem <= 0) {
+            timerDisp.textContent = 'Expirada';
+            timerDisp.style.color = 'var(--danger)';
             extendBtn.disabled = true;
             return;
         }
         
-        // Calcula minutos e segundos
-        const totalSeconds = Math.floor(remaining / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
+        // Calculates minutes and seconds
+        const totalSec = Math.floor(rem / 1000);
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
         
-        // Formata como MM:SS
-        const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        timerDisplay.textContent = formatted;
+        // Formats as MM:SS
+        const fmt = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        timerDisp.textContent = fmt;
         
-        // Muda cor se estiver abaixo de 1 minuto
-        if (totalSeconds < 60) {
-            timerDisplay.style.color = 'var(--danger)';
-        } else if (totalSeconds < 300) { // Menos de 5 minutos
-            timerDisplay.style.color = 'var(--warn)';
+        // Changes color if below 1 minute
+        if (totalSec < 60) {
+            timerDisp.style.color = 'var(--danger)';
+        } else if (totalSec < 300) { // Less than 5 minutes
+            timerDisp.style.color = 'var(--warn)';
         } else {
-            timerDisplay.style.color = 'var(--txt-sec)';
+            timerDisp.style.color = 'var(--txt-sec)';
         }
         
         extendBtn.disabled = false;
     }
     
     /**
-     * Prolonga sessão em 30 minutos
+     * Extends session by 30 minutes
      */
     extendSession() {
-        // Verifica autenticação antes de prolongar
+        // Checks authentication before extending
         if (!this.store.isAuthenticated()) {
             this.showToast('Sessão expirada. Faça login novamente.', 'error');
             return;
@@ -348,10 +348,10 @@ class App {
     }
     
     /**
-     * Limpa interface quando autenticação expira
+     * Clears the interface when authentication expires
      */
     clearInterfaceOnExpiry() {
-        // Limpa dados sensíveis da interface
+        // Clears sensitive data from the interface
         const pwdList = document.getElementById('pwdList');
         if (pwdList) {
             pwdList.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação expirada</p>';
@@ -369,7 +369,7 @@ class App {
     }
     
     /**
-     * Verifica autenticação antes de ação sensível
+     * Checks authentication before a sensitive action
      */
     checkAuthAndDo(action) {
         if (this.store.isAuthenticated()) {
@@ -385,7 +385,7 @@ class App {
      */
     logout() {
         if (confirm('Deseja sair?')) {
-            // Limpa timer de sessão
+            // Clears session timer
             if (this.sessionTimerInterval) {
                 clearInterval(this.sessionTimerInterval);
                 this.sessionTimerInterval = null;
@@ -397,36 +397,36 @@ class App {
     }
     
     /**
-     * Troca seção ativa
+     * Switches active section
      */
     switchSection(e) {
         const section = e.currentTarget.dataset.section;
         if (!section) return;
         
-        // Verifica autenticação antes de trocar de seção (exceto para seções não sensíveis)
-        const sensitiveSections = ['passwords', 'notes'];
-        if (sensitiveSections.includes(section) && !this.store.isAuthenticated()) {
+        // Checks authentication before switching sections (except for non-sensitive sections)
+        const sensSections = ['passwords', 'notes'];
+        if (sensSections.includes(section) && !this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.switchSection(e));
             return;
         }
         
-        // Atualiza menu
+        // Updates menu
         document.querySelectorAll('.menu-item').forEach(item => {
             item.classList.remove('active');
         });
         e.currentTarget.classList.add('active');
         
-        // Atualiza conteúdo
+        // Updates content
         document.querySelectorAll('.section').forEach(sec => {
             sec.classList.remove('active');
         });
         
-        const targetSection = document.getElementById(section);
-        if (targetSection) {
-            targetSection.classList.add('active');
+        const targetSec = document.getElementById(section);
+        if (targetSec) {
+            targetSec.classList.add('active');
         }
         
-        // Recarrega dados se necessário e autenticado
+        // Reloads data if necessary and authenticated
         if (this.store.isAuthenticated()) {
             if (section === 'passwords') {
                 this.loadPasswords();
@@ -437,10 +437,10 @@ class App {
     }
     
     /**
-     * Carrega lista de blocos
+     * Loads block list
      */
     loadBlocks() {
-        // Verifica autenticação antes de carregar blocos
+        // Checks authentication before loading blocks
         if (!this.store.isAuthenticated()) {
             const container = document.getElementById('blkList');
             if (container) {
@@ -452,17 +452,17 @@ class App {
         const container = document.getElementById('blkList');
         if (!container || !this.store.vault) return;
         
-        // Limpa container
+        // Clears container
         container.innerHTML = '';
         
         this.store.vault.blks.forEach(block => {
             const div = document.createElement('div');
             div.className = `blk-item ${block.id === this.currentBlock ? 'active' : ''}`;
             
-            // Evento de clique na div inteira para melhor hitbox
+            // Click event on the entire div for better hitbox
             div.style.cursor = 'pointer';
             div.addEventListener('click', (e) => {
-                // Previne clique se for no botão de deletar
+                // Prevents click if it's on the delete button
                 if (e.target.tagName === 'BUTTON') {
                     return;
                 }
@@ -470,18 +470,18 @@ class App {
             });
             
             const span = document.createElement('span');
-            span.textContent = block.name; // textContent previne XSS
+            span.textContent = block.name; // textContent prevents XSS
             
             div.appendChild(span);
             
-            // Botão deletar (exceto default)
+            // Delete button (except default)
             if (block.id !== 'default') {
                 const delBtn = document.createElement('button');
                 delBtn.className = 'btn-icon';
                 delBtn.style.padding = '4px';
                 delBtn.textContent = '✕';
                 delBtn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Previne propagação para a div
+                    e.stopPropagation(); // Prevents propagation to the div
                     this.deleteBlock(block.id);
                 });
                 div.appendChild(delBtn);
@@ -492,10 +492,10 @@ class App {
     }
     
     /**
-     * Seleciona bloco
+     * Selects block
      */
     selectBlock(id) {
-        // Verifica autenticação antes de trocar de bloco
+        // Checks authentication before switching blocks
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.selectBlock(id));
             return;
@@ -508,12 +508,12 @@ class App {
     }
     
     /**
-     * Salva novo bloco
+     * Saves new block
      */
     async saveBlock(e) {
         e.preventDefault();
         
-        // Verifica autenticação antes de salvar
+        // Checks authentication before saving
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => {
                 const form = document.getElementById('blkForm');
@@ -543,16 +543,16 @@ class App {
     }
     
     /**
-     * Deleta bloco
+     * Deletes block
      */
     async deleteBlock(id) {
-        // Verifica autenticação antes de deletar
+        // Checks authentication before deleting
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.deleteBlock(id));
             return;
         }
         
-        // Protege bloco default
+        // Protects default block
         if (id === 'default') {
             this.showToast('Não é possível excluir o bloco padrão', 'error');
             return;
@@ -578,10 +578,10 @@ class App {
     }
     
     /**
-     * Carrega lista de senhas
+     * Loads password list
      */
     loadPasswords() {
-        // Verifica autenticação antes de carregar senhas
+        // Checks authentication before loading passwords
         if (!this.store.isAuthenticated()) {
             const container = document.getElementById('pwdList');
             if (container) {
@@ -593,16 +593,16 @@ class App {
         const container = document.getElementById('pwdList');
         if (!container || !this.store.vault) return;
         
-        const passwords = this.store.vault.pwds.filter(p => p.blk === this.currentBlock);
+        const pwds = this.store.vault.pwds.filter(p => p.blk === this.currentBlock);
         
-        if (passwords.length === 0) {
+        if (pwds.length === 0) {
             container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Nenhuma senha salva</p>';
             return;
         }
         
         container.innerHTML = '';
         
-        passwords.forEach(pwd => {
+        pwds.forEach(pwd => {
             const card = document.createElement('div');
             card.className = 'pwd-card';
             
@@ -614,7 +614,7 @@ class App {
             
             const site = document.createElement('div');
             site.className = 'pwd-site';
-            site.textContent = pwd.site; // textContent previne XSS
+            site.textContent = pwd.site; // textContent prevents XSS
             
             const user = document.createElement('div');
             user.className = 'pwd-user';
@@ -631,9 +631,9 @@ class App {
             header.appendChild(expandBtn);
             
             // Details
-            const details = document.createElement('div');
-            details.className = 'pwd-details';
-            details.id = `pwd-${pwd.id}`;
+            const dtls = document.createElement('div');
+            dtls.className = 'pwd-details';
+            dtls.id = `pwd-${pwd.id}`;
             
             const field = document.createElement('div');
             field.className = 'pwd-field';
@@ -641,8 +641,8 @@ class App {
             const label = document.createElement('label');
             label.textContent = 'Senha';
             
-            const wrapper = document.createElement('div');
-            wrapper.className = 'pwd-value-wrapper';
+            const wrap = document.createElement('div');
+            wrap.className = 'pwd-value-wrapper';
             
             const value = document.createElement('div');
             value.className = 'pwd-value';
@@ -659,12 +659,12 @@ class App {
             copyBtn.textContent = 'Copiar';
             copyBtn.addEventListener('click', () => this.copyPassword(pwd.id));
             
-            wrapper.appendChild(value);
-            wrapper.appendChild(showBtn);
-            wrapper.appendChild(copyBtn);
+            wrap.appendChild(value);
+            wrap.appendChild(showBtn);
+            wrap.appendChild(copyBtn);
             
             field.appendChild(label);
-            field.appendChild(wrapper);
+            field.appendChild(wrap);
             
             const actions = document.createElement('div');
             actions.style.marginTop = '16px';
@@ -678,22 +678,22 @@ class App {
             
             actions.appendChild(delBtn);
             
-            details.appendChild(field);
-            details.appendChild(actions);
+            dtls.appendChild(field);
+            dtls.appendChild(actions);
             
             // Toggle details
             header.addEventListener('click', () => {
-                details.classList.toggle('show');
+                dtls.classList.toggle('show');
             });
             
             card.appendChild(header);
-            card.appendChild(details);
+            card.appendChild(dtls);
             container.appendChild(card);
         });
     }
     
     /**
-     * Abre modal de senha
+     * Opens password modal
      */
     openPasswordModal() {
         const select = document.getElementById('pwdBlk');
@@ -715,12 +715,12 @@ class App {
     }
     
     /**
-     * Salva senha
+     * Saves password
      */
     async savePassword(e) {
         e.preventDefault();
         
-        // Verifica autenticação antes de salvar senha
+        // Checks authentication before saving password
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => {
                 const form = document.getElementById('pwdForm');
@@ -734,7 +734,7 @@ class App {
         const usr = document.getElementById('pwdUsr').value;
         const val = document.getElementById('pwdVal').value;
         
-        // Validação
+        // Validation
         if (!Security.validate(site, 100) || 
             !Security.validate(usr, 200) || 
             !Security.validate(val, 500)) {
@@ -761,10 +761,10 @@ class App {
     }
     
     /**
-     * Alterna visibilidade da senha
+     * Toggles password visibility
      */
     togglePasswordVisibility(id) {
-        // Verifica autenticação antes de mostrar senha
+        // Checks authentication before showing password
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.togglePasswordVisibility(id));
             return;
@@ -784,10 +784,10 @@ class App {
     }
     
     /**
-     * Copia senha
+     * Copies password
      */
     copyPassword(id) {
-        // Verifica autenticação antes de copiar senha
+        // Checks authentication before copying password
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.copyPassword(id));
             return;
@@ -804,10 +804,10 @@ class App {
     }
     
     /**
-     * Deleta senha
+     * Deletes password
      */
     async deletePassword(id) {
-        // Verifica autenticação antes de deletar senha
+        // Checks authentication before deleting password
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.deletePassword(id));
             return;
@@ -823,20 +823,20 @@ class App {
     }
     
     /**
-     * Gera senha forte
+     * Generates strong password
      */
     generatePassword() {
-        const length = parseInt(document.getElementById('genLen').value) || 16;
-        const useUpper = document.getElementById('genUpper').checked;
-        const useLower = document.getElementById('genLower').checked;
-        const useNumbers = document.getElementById('genNum').checked;
-        const useSymbols = document.getElementById('genSym').checked;
+        const len = parseInt(document.getElementById('genLen').value) || 16;
+        const upper = document.getElementById('genUpper').checked;
+        const lower = document.getElementById('genLower').checked;
+        const num = document.getElementById('genNum').checked;
+        const sym = document.getElementById('genSym').checked;
         
         let charset = '';
-        if (useUpper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        if (useLower) charset += 'abcdefghijklmnopqrstuvwxyz';
-        if (useNumbers) charset += '0123456789';
-        if (useSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+        if (upper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        if (lower) charset += 'abcdefghijklmnopqrstuvwxyz';
+        if (num) charset += '0123456789';
+        if (sym) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
         
         if (!charset) {
             this.showToast('Selecione pelo menos uma opção', 'error');
@@ -844,10 +844,10 @@ class App {
         }
         
         let password = '';
-        const array = new Uint8Array(length);
+        const array = new Uint8Array(len);
         crypto.getRandomValues(array);
         
-        for (let i = 0; i < length; i++) {
+        for (let i = 0; i < len; i++) {
             password += charset[array[i] % charset.length];
         }
         
@@ -856,7 +856,7 @@ class App {
     }
     
     /**
-     * Copia senha gerada
+     * Copies generated password
      */
     copyGenerated() {
         const input = document.getElementById('genPwd');
@@ -868,7 +868,7 @@ class App {
     }
     
     /**
-     * Gera senha rápida
+     * Generates quick password
      */
     generateQuickPassword() {
         const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
@@ -885,7 +885,7 @@ class App {
     }
     
     /**
-     * Gera pessoa fictícia
+     * Generates fictitious person
      */
     generatePerson() {
         const names = [
@@ -929,19 +929,19 @@ class App {
         
         const person = { name, cpf, birthdate, email, link, address };
         
-        // Armazena a pessoa atual para permitir atualização do link quando o domínio do email mudar
+        // Stores the current person to allow updating the link when the email domain changes
         this.currentPerson = person;
         
         this.displayPerson(person);
     }
     
     /**
-     * Gera CPF válido
+     * Generates valid CPF
      */
     generateCPF() {
         const nums = Array.from({length: 9}, () => Math.floor(Math.random() * 10));
         
-        // Primeiro dígito
+        // First digit
         let sum = 0;
         for (let i = 0; i < 9; i++) {
             sum += nums[i] * (10 - i);
@@ -950,7 +950,7 @@ class App {
         if (d1 >= 10) d1 = 0;
         nums.push(d1);
         
-        // Segundo dígito
+        // Second digit
         sum = 0;
         for (let i = 0; i < 10; i++) {
             sum += nums[i] * (11 - i);
@@ -966,7 +966,7 @@ class App {
     }
     
     /**
-     * Exibe pessoa gerada
+     * Displays generated person
      */
     displayPerson(person) {
         const container = document.getElementById('personContent');
@@ -977,7 +977,7 @@ class App {
         const card = document.createElement('div');
         card.className = 'person-card';
         
-        // Campos
+        // Fields
         const fields = [
             { label: 'Nome', value: person.name },
             { label: 'CPF', value: person.cpf },
@@ -994,8 +994,8 @@ class App {
             label.className = 'field-label';
             label.textContent = field.label + ':';
             
-            const valueDiv = document.createElement('span');
-            valueDiv.className = 'field-value';
+            const valDiv = document.createElement('span');
+            valDiv.className = 'field-value';
             
             if (field.hasActions) {
                 const emailSpan = document.createElement('span');
@@ -1012,7 +1012,7 @@ class App {
                 linkBtn.textContent = '↗';
                 linkBtn.id = 'personLinkBtn';
                 linkBtn.addEventListener('click', () => {
-                    // Obtém o link atualizado baseado no email exibido
+                    // Gets the updated link based on the displayed email
                     const currentEmail = document.getElementById('personEmail').textContent;
                     const emailUser = currentEmail.split('@')[0];
                     const domain = currentEmail.split('@')[1];
@@ -1023,27 +1023,27 @@ class App {
                     } else if (domain === 'firemail.com.br') {
                         currentLink = `https://firemail.com.br/${emailUser}`;
                     } else {
-                        currentLink = field.link; // Fallback para o link original
+                        currentLink = field.link; // Fallback to the original link
                     }
                     
                     window.open(currentLink, '_blank');
                 });
                 
-                valueDiv.appendChild(emailSpan);
-                valueDiv.appendChild(editBtn);
-                valueDiv.appendChild(linkBtn);
+                valDiv.appendChild(emailSpan);
+                valDiv.appendChild(editBtn);
+                valDiv.appendChild(linkBtn);
             } else {
-                valueDiv.textContent = field.value;
+                valDiv.textContent = field.value;
             }
             
             div.appendChild(label);
-            div.appendChild(valueDiv);
+            div.appendChild(valDiv);
             card.appendChild(div);
         });
         
         container.appendChild(card);
         
-        // Botões
+        // Buttons
         const actions = document.createElement('div');
         actions.style.display = 'flex';
         actions.style.gap = '12px';
@@ -1064,8 +1064,8 @@ class App {
     }
     
     /**
-     * Altera domínio do email
-     * Atualiza tanto o email exibido quanto o link de redirecionamento
+     * Changes email domain
+     * Updates both the displayed email and the redirect link
      */
     changeEmailDomain() {
         const emailEl = document.getElementById('personEmail');
@@ -1083,14 +1083,14 @@ class App {
             newEmail = user + '@tuamaeaquelaursa.com';
             newLink = `https://tuamaeaquelaursa.com/${user}`;
         } else {
-            // Se não reconhecer o domínio, mantém como está
+            // If it doesn't recognize the domain, it keeps it as it is
             return;
         }
         
-        // Atualiza o email exibido
+        // Updates the displayed email
         emailEl.textContent = newEmail;
         
-        // Atualiza o objeto person atual para manter consistência
+        // Updates the current person object to maintain consistency
         if (this.currentPerson) {
             this.currentPerson.email = newEmail;
             this.currentPerson.link = newLink;
@@ -1098,10 +1098,10 @@ class App {
     }
     
     /**
-     * Salva pessoa
+     * Saves person
      */
     async savePerson(person) {
-        // Verifica autenticação antes de salvar pessoa
+        // Checks authentication before saving person
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.savePerson(person));
             return;
@@ -1120,7 +1120,7 @@ class App {
     }
     
     /**
-     * Copia dados da pessoa
+     * Copies person's data
      */
     copyPerson(person) {
         const text = `Nome: ${person.name}\nCPF: ${person.cpf}\nNascimento: ${person.birthdate}\nEmail: ${person.email}\nEndereço: ${person.address}`;
@@ -1131,10 +1131,10 @@ class App {
     }
     
     /**
-     * Mostra pessoas salvas
+     * Shows saved people
      */
     showSavedPersons() {
-        // Verifica autenticação antes de mostrar pessoas salvas
+        // Checks authentication before showing saved people
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.showSavedPersons());
             return;
@@ -1154,7 +1154,7 @@ class App {
             const card = document.createElement('div');
             card.className = 'person-card';
             
-            // Campos básicos
+            // Basic fields
             const fields = [
                 { label: 'Nome', value: person.name },
                 { label: 'CPF', value: person.cpf },
@@ -1179,7 +1179,7 @@ class App {
                 card.appendChild(div);
             });
             
-            // Ações
+            // Actions
             const actions = document.createElement('div');
             actions.style.display = 'flex';
             actions.style.gap = '12px';
@@ -1204,10 +1204,10 @@ class App {
     }
     
     /**
-     * Deleta pessoa
+     * Deletes person
      */
     async deletePerson(id) {
-        // Verifica autenticação antes de deletar pessoa
+        // Checks authentication before deleting person
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.deletePerson(id));
             return;
@@ -1223,10 +1223,10 @@ class App {
     }
     
     /**
-     * Carrega notas
+     * Loads notes
      */
     loadNotes() {
-        // Verifica autenticação antes de carregar notas
+        // Checks authentication before loading notes
         if (!this.store.isAuthenticated()) {
             const container = document.getElementById('notesList');
             if (container) {
@@ -1252,7 +1252,7 @@ class App {
             const card = document.createElement('div');
             card.className = 'note-card';
             
-            // Header com título e botões
+            // Header with title and buttons
             const header = document.createElement('div');
             header.style.display = 'flex';
             header.style.justifyContent = 'space-between';
@@ -1266,7 +1266,7 @@ class App {
             title.style.flex = '1';
             title.addEventListener('click', () => this.showNoteDetail(note));
             
-            // Botões de ação
+            // Action buttons
             const actions = document.createElement('div');
             actions.style.display = 'flex';
             actions.style.gap = '8px';
@@ -1308,10 +1308,10 @@ class App {
     }
     
     /**
-     * Abre modal de nota
+     * Opens note modal
      */
     openNoteModal(note = null) {
-        // Verifica autenticação antes de abrir modal
+        // Checks authentication before opening modal
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.openNoteModal(note));
             return;
@@ -1325,15 +1325,15 @@ class App {
         
         if (!select || !titleInput || !contentInput || !form) return;
         
-        // Define modo de edição ou criação
+        // Defines edit or create mode
         this.editingNoteId = note ? note.id : null;
         
-        // Atualiza título do modal
+        // Updates modal title
         if (modalTitle) {
             modalTitle.textContent = note ? 'Editar Anotação' : 'Nova Anotação';
         }
         
-        // Preenche campos se estiver editando
+        // Fills fields if editing
         if (note) {
             titleInput.value = note.title;
             contentInput.value = note.content;
@@ -1342,7 +1342,7 @@ class App {
             contentInput.value = '';
         }
         
-        // Preenche select de blocos
+        // Fills block select
         select.innerHTML = '';
         this.store.vault.blks.forEach(blk => {
             const option = document.createElement('option');
@@ -1360,12 +1360,12 @@ class App {
     }
     
     /**
-     * Salva nota
+     * Saves note
      */
     async saveNote(e) {
         e.preventDefault();
         
-        // Verifica autenticação antes de salvar nota
+        // Checks authentication before saving note
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => {
                 const form = document.getElementById('noteForm');
@@ -1387,9 +1387,9 @@ class App {
             this.store.vault.notes = [];
         }
         
-        // Verifica se é edição ou criação
+        // Checks if it is an edit or creation
         if (this.editingNoteId) {
-            // Edita nota existente
+            // Edits existing note
             const noteIndex = this.store.vault.notes.findIndex(n => n.id === this.editingNoteId);
             if (noteIndex !== -1) {
                 this.store.vault.notes[noteIndex] = {
@@ -1408,7 +1408,7 @@ class App {
             }
         }
         
-        // Cria nova nota
+        // Creates new note
         const note = {
             id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
             blk,
@@ -1428,17 +1428,17 @@ class App {
     }
     
     /**
-     * Edita nota
+     * Edits note
      */
     editNote(note) {
         this.openNoteModal(note);
     }
     
     /**
-     * Deleta nota
+     * Deletes note
      */
     async deleteNote(id) {
-        // Verifica autenticação antes de deletar nota
+        // Checks authentication before deleting note
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.deleteNote(id));
             return;
@@ -1454,10 +1454,10 @@ class App {
     }
     
     /**
-     * Mostra detalhes da nota
+     * Shows note details
      */
     showNoteDetail(note) {
-        // Verifica autenticação antes de mostrar detalhes
+        // Checks authentication before showing details
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.showNoteDetail(note));
             return;
@@ -1467,7 +1467,7 @@ class App {
     }
     
     /**
-     * Salva configurações
+     * Saves settings
      */
     saveConfig() {
         const service = document.querySelector('input[name="emailSvc"]:checked');
@@ -1481,7 +1481,7 @@ class App {
     }
     
     /**
-     * Abre modal
+     * Opens modal
      */
     openModal(id) {
         const modal = document.getElementById(id);
@@ -1489,10 +1489,10 @@ class App {
     }
     
     /**
-     * Fecha modal
+     * Closes modal
      */
     closeModal(id) {
-        // Limpa estado de edição ao fechar modal de notas
+        // Clears edit state when closing note modal
         if (id === 'noteModal') {
             this.editingNoteId = null;
             const form = document.getElementById('noteForm');
@@ -1504,7 +1504,7 @@ class App {
     }
     
     /**
-     * Mostra toast
+     * Shows toast
      */
     showToast(message, type = 'success') {
         const toast = document.getElementById('toast');

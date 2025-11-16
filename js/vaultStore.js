@@ -2,43 +2,43 @@
 
 /**
  * VaultStore Module
- * Gerencia armazenamento e criptografia do vault
+ * Manages vault storage and encryption
  */
 class VaultStore {
     constructor() {
-        this.currentKey = null;  // Chave temporária em memória
-        this.vault = null;       // Dados descriptografados temporários
+        this.currentKey = null;  // Temporary key in memory
+        this.vault = null;       // Temporary decrypted data
         this.salt = null;
         this.authExpiry = 0;
         this.config = { emailSvc: 'tuamae' };
         
-        // Tenta restaurar sessão do localStorage se ainda válida
+        // Tries to restore the session from localStorage if it is still valid
         this.restoreSession();
     }
     
     /**
-     * Restaura sessão do localStorage se ainda válida
+     * Restores the session from localStorage if it is still valid
      */
     restoreSession() {
         try {
-            const savedExpiry = localStorage.getItem('sessionExpiry');
-            if (savedExpiry) {
-                const expiry = parseInt(savedExpiry, 10);
+            const savExp = localStorage.getItem('sessionExpiry');
+            if (savExp) {
+                const expiry = parseInt(savExp, 10);
                 if (expiry > Date.now()) {
-                    // Sessão ainda válida, restaura expiry
+                    // Session still valid, restores expiry
                     this.authExpiry = expiry;
                 } else {
-                    // Sessão expirada, remove
+                    // Session expired, remove
                     localStorage.removeItem('sessionExpiry');
                 }
             }
         } catch (e) {
-            // Ignora erros ao restaurar sessão
+            // Ignores errors when restoring the session
         }
     }
     
     /**
-     * Salva expiry da sessão no localStorage
+     * Saves the session expiry in localStorage
      */
     saveSessionExpiry() {
         try {
@@ -48,23 +48,23 @@ class VaultStore {
                 localStorage.removeItem('sessionExpiry');
             }
         } catch (e) {
-            // Ignora erros ao salvar sessão
+            // Ignores errors when saving the session
         }
     }
     
     /**
-     * Cria novo vault
+     * Creates a new vault
      */
-    async createVault(password, sessionDuration = 60000) {
-        // Gera salt aleatório
+    async createVault(password, sessDur = 60000) {
+        // Generates a random salt
         this.salt = crypto.getRandomValues(new Uint8Array(Crypto.SALT_LENGTH));
         
-        // Deriva chave (senha é descartada)
+        // Derives key (password is discarded)
         this.currentKey = await Crypto.deriveKey(password, this.salt);
         
-        // Estrutura inicial com blocos default
-        // Todas as anotações de payloads vão para o bloco "Geral" (default)
-        const allPentestNotes = [
+        // Initial structure with default blocks
+        // All payload annotations go to the "General" (default) block
+        const pNotes = [
             ...XSSPayloads.map((payload, index) => ({
                 id: `note_xss_${index}_${Date.now()}`,
                 blk: 'default',
@@ -92,91 +92,91 @@ class VaultStore {
             ],
             pwds: [],
             prs: [],
-            notes: allPentestNotes
+            notes: pNotes
         };
         
-        // Salva criptografado
+        // Saves encrypted
         await this.saveVault();
         
-        // Define expiração da autenticação (padrão 1 minuto, ou 30 minutos se extendido)
-        this.authExpiry = Date.now() + sessionDuration;
+        // Defines the authentication expiration (default 1 minute, or 30 minutes if extended)
+        this.authExpiry = Date.now() + sessDur;
         this.saveSessionExpiry();
         
         return true;
     }
     
     /**
-     * Abre vault existente
-     * Testa descriptografia para validar senha
+     * Opens an existing vault
+     * Tests decryption to validate the password
      */
-    async openVault(password, sessionDuration = 60000) {
+    async openVault(password, sessDur = 60000) {
         const stored = localStorage.getItem('vault');
         if (!stored) return false;
         
         try {
-            const vaultData = JSON.parse(stored);
-            this.salt = new Uint8Array(vaultData.salt);
+            const vData = JSON.parse(stored);
+            this.salt = new Uint8Array(vData.salt);
             
-            // Deriva chave
-            const testKey = await Crypto.deriveKey(password, this.salt);
+            // Derives key
+            const tKey = await Crypto.deriveKey(password, this.salt);
             
-            // Tenta descriptografar para validar senha
-            const decrypted = await Crypto.decrypt(vaultData.data, testKey);
+            // Tries to decrypt to validate the password
+            const dec = await Crypto.decrypt(vData.data, tKey);
             
-            if (!decrypted) {
-                // Senha incorreta ou dados corrompidos
+            if (!dec) {
+                // Incorrect password or corrupted data
                 return false;
             }
             
-            // Sucesso - mantém chave e dados
-            this.currentKey = testKey;
-            this.vault = decrypted;
-            this.authExpiry = Date.now() + sessionDuration;
+            // Success - keeps key and data
+            this.currentKey = tKey;
+            this.vault = dec;
+            this.authExpiry = Date.now() + sessDur;
             this.saveSessionExpiry();
             
-            // Remove blocos antigos de pentest (xss, sqli, pentest) se existirem
-            const pentestBlockIds = ['xss', 'sqli', 'pentest'];
+            // Removes old pentest blocks (xss, sqli, pentest) if they exist
+            const pBlockIds = ['xss', 'sqli', 'pentest'];
             if (this.vault.blks) {
-                this.vault.blks = this.vault.blks.filter(b => !pentestBlockIds.includes(b.id));
+                this.vault.blks = this.vault.blks.filter(b => !pBlockIds.includes(b.id));
             }
             
-            // Garante que o bloco "Geral" (default) existe
-            const existingBlockIds = this.vault.blks ? this.vault.blks.map(b => b.id) : [];
-            if (!existingBlockIds.includes('default')) {
+            // Ensures that the "General" (default) block exists
+            const exBlockIds = this.vault.blks ? this.vault.blks.map(b => b.id) : [];
+            if (!exBlockIds.includes('default')) {
                 if (!this.vault.blks) {
                     this.vault.blks = [];
                 }
                 this.vault.blks.push({ id: 'default', name: 'Geral' });
             }
             
-            // Remove todas as senhas dos blocos de pentest antigos (dados incorretos)
+            // Removes all passwords from old pentest blocks (incorrect data)
             if (this.vault.pwds && this.vault.pwds.length > 0) {
-                this.vault.pwds = this.vault.pwds.filter(p => !pentestBlockIds.includes(p.blk));
+                this.vault.pwds = this.vault.pwds.filter(p => !pBlockIds.includes(p.blk));
             }
             
-            // Migra anotações antigas dos blocos de pentest para o bloco "Geral"
+            // Migrates old annotations from pentest blocks to the "General" block
             if (!this.vault.notes) {
                 this.vault.notes = [];
             }
             
-            // Atualiza bloco de anotações antigas dos blocos de pentest para "default"
+            // Updates the block of old annotations from the pentest blocks to "default"
             this.vault.notes.forEach(note => {
-                if (pentestBlockIds.includes(note.blk)) {
+                if (pBlockIds.includes(note.blk)) {
                     note.blk = 'default';
                 }
             });
             
-            // Remove anotações padrão antigas que podem ter IDs duplicados
-            // Remove anotações que começam com note_xss_, note_sqli_, note_pentest_
+            // Removes old default annotations that may have duplicate IDs
+            // Removes annotations that start with note_xss_, note_sqli_, note_pentest_
             const timestamp = Date.now();
-            const existingNoteIds = this.vault.notes.map(n => n.id);
+            const exNoteIds = this.vault.notes.map(n => n.id);
             this.vault.notes = this.vault.notes.filter(n => {
-                // Mantém apenas anotações que não são payloads padrão antigos
+                // Keeps only annotations that are not old default payloads
                 return !n.id.match(/^note_(xss|sqli|pentest)_\d+_/);
             });
             
-            // Cria todas as anotações de payloads no bloco "Geral" (default)
-            const allPentestNotes = [
+            // Creates all payload annotations in the "General" (default) block
+            const pNotes = [
                 ...XSSPayloads.map((payload, index) => ({
                     id: `note_xss_${index}_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
                     blk: 'default',
@@ -197,19 +197,19 @@ class VaultStore {
                 }))
             ];
             
-            // Adiciona apenas anotações que não existem ainda (verifica por título para evitar duplicatas)
-            const existingTitles = new Set(this.vault.notes.map(n => n.title));
-            allPentestNotes.forEach(note => {
-                if (!existingTitles.has(note.title)) {
+            // Adds only annotations that do not exist yet (checks by title to avoid duplicates)
+            const exTitles = new Set(this.vault.notes.map(n => n.title));
+            pNotes.forEach(note => {
+                if (!exTitles.has(note.title)) {
                     this.vault.notes.push(note);
-                    existingTitles.add(note.title);
+                    exTitles.add(note.title);
                 }
             });
             
-            // Salva as alterações
+            // Saves the changes
             await this.saveVault();
             
-            // Carrega configurações
+            // Loads settings
             const cfg = localStorage.getItem('config');
             if (cfg) {
                 try {
@@ -224,31 +224,31 @@ class VaultStore {
     }
     
     /**
-     * Re-autentica testando descriptografia
-     * Nunca compara senhas diretamente
+     * Re-authenticates by testing decryption
+     * Never compares passwords directly
      */
     async reAuthenticate(password) {
         if (!this.salt) return false;
         
         try {
-            // Deriva nova chave
-            const testKey = await Crypto.deriveKey(password, this.salt);
+            // Derives new key
+            const tKey = await Crypto.deriveKey(password, this.salt);
             
-            // Pega dados salvos
+            // Gets saved data
             const stored = localStorage.getItem('vault');
             if (!stored) return false;
             
-            const vaultData = JSON.parse(stored);
+            const vData = JSON.parse(stored);
             
-            // Testa descriptografia
-            const decrypted = await Crypto.decrypt(vaultData.data, testKey);
+            // Tests decryption
+            const dec = await Crypto.decrypt(vData.data, tKey);
             
-            if (!decrypted) {
+            if (!dec) {
                 return false;
             }
             
-            // Sucesso - atualiza chave e expiry (mantém duração padrão de 1 minuto para re-auth)
-            this.currentKey = testKey;
+            // Success - updates key and expiry (maintains default duration of 1 minute for re-auth)
+            this.currentKey = tKey;
             this.authExpiry = Date.now() + 60000;
             this.saveSessionExpiry();
             
@@ -259,17 +259,17 @@ class VaultStore {
     }
     
     /**
-     * Salva vault criptografado
+     * Saves encrypted vault
      */
     async saveVault() {
         if (!this.currentKey || !this.vault) return false;
         
         try {
-            const encrypted = await Crypto.encrypt(this.vault, this.currentKey);
+            const enc = await Crypto.encrypt(this.vault, this.currentKey);
             
             localStorage.setItem('vault', JSON.stringify({
                 salt: Array.from(this.salt),
-                data: encrypted,
+                data: enc,
                 timestamp: Date.now()
             }));
             
@@ -280,21 +280,21 @@ class VaultStore {
     }
     
     /**
-     * Verifica se vault existe
+     * Checks if vault exists
      */
     exists() {
         return localStorage.getItem('vault') !== null;
     }
     
     /**
-     * Verifica se autenticação ainda é válida
+     * Checks if authentication is still valid
      */
     isAuthenticated() {
         return this.currentKey !== null && Date.now() < this.authExpiry;
     }
     
     /**
-     * Retorna tempo restante da sessão em milissegundos
+     * Returns the remaining session time in milliseconds
      */
     getSessionTimeRemaining() {
         if (!this.currentKey || !this.authExpiry) {
@@ -305,28 +305,28 @@ class VaultStore {
     }
     
     /**
-     * Prolonga a sessão adicionando tempo
-     * @param {number} additionalMinutes - Minutos adicionais para prolongar a sessão
+     * Extends the session by adding time
+     * @param {number} additionalMinutes - Additional minutes to extend the session
      */
-    extendSession(additionalMinutes = 30) {
+    extendSession(addMin = 30) {
         if (!this.isAuthenticated()) {
             return false;
         }
         
-        const additionalMs = additionalMinutes * 60 * 1000;
-        const currentRemaining = this.getSessionTimeRemaining();
-        const newExpiry = Date.now() + currentRemaining + additionalMs;
+        const addMs = addMin * 60 * 1000;
+        const currRem = this.getSessionTimeRemaining();
+        const newExp = Date.now() + currRem + addMs;
         
-        // Limita a sessão máxima a 60 minutos
-        const maxSessionMs = 60 * 60 * 1000;
-        this.authExpiry = Math.min(newExpiry, Date.now() + maxSessionMs);
+        // Limits the maximum session to 60 minutes
+        const maxSessMs = 60 * 60 * 1000;
+        this.authExpiry = Math.min(newExp, Date.now() + maxSessMs);
         this.saveSessionExpiry();
         
         return true;
     }
     
     /**
-     * Limpa dados sensíveis da memória
+     * Clears sensitive data from memory
      */
     lock() {
         this.currentKey = null;
@@ -337,23 +337,23 @@ class VaultStore {
     }
     
     /**
-     * Verifica se há sessão válida salva (sem precisar descriptografar)
+     * Checks if there is a valid saved session (without needing to decrypt)
      */
     hasValidSession() {
         try {
-            const savedExpiry = localStorage.getItem('sessionExpiry');
-            if (savedExpiry) {
-                const expiry = parseInt(savedExpiry, 10);
+            const savExp = localStorage.getItem('sessionExpiry');
+            if (savExp) {
+                const expiry = parseInt(savExp, 10);
                 return expiry > Date.now();
             }
         } catch (e) {
-            // Ignora erros
+            // Ignores errors
         }
         return false;
     }
     
     /**
-     * Salva configurações (não criptografadas)
+     * Saves settings (not encrypted)
      */
     saveConfig() {
         localStorage.setItem('config', JSON.stringify(this.config));
