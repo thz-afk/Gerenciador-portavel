@@ -1,9 +1,6 @@
 'use strict';
 
-/**
- * Application Controller
- * Gerencia toda a lógica da aplicação
- */
+
 class App {
     constructor() {
         this.store = new VaultStore();
@@ -15,9 +12,9 @@ class App {
         this.init();
     }
     
-    /**
-     * Inicializa aplicação
-     */
+    
+     // Inicializa aplicação
+     
     init() {
         this.attachEventListeners();
         
@@ -35,9 +32,9 @@ class App {
         }
     }
     
-    /**
-     * Mostra tela de login com indicação de sessão ativa
-     */
+    
+     // Mostra tela de login com indicação de sessão ativa
+     
     showLoginWithSession() {
         const msg = document.getElementById('authMsg');
         if (msg) {
