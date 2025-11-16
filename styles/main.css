@@ -6,11 +6,11 @@
 }
 
 :root {
-    --bg: #0a0e1a;
-    --bg-sec: #141925;
-    --bg-card: #1e2436;
-    --border: #2a3245;
-    --txt: #e4e7ed;
+    --bg: #111111;
+    --bg-sec: #2C2C2C;
+    --bg-card: #7A7A7A;
+    --border: #A5A5A5;
+    --txt: ##F2F2F2;
     --txt-sec: #8892a6;
     --accent: #4c6ef5;
     --accent-hover: #5c7cfa;
