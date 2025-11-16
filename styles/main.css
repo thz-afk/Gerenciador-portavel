@@ -6,21 +6,23 @@
 }
 
 :root {
-    --bg: #111111;
-    --bg-sec: #1A1A1A;
-    --bg-card: #1F1F1F;
+    --bg: #0E0E0F;
+    --bg-sec: #17171A;
+    --bg-card: #1E1E22;
 
-    --border: #2E2E2E;
-    --txt: #C8C8C8;
-    --txt-sec: #9A9A9A;
+    --border: #2F2F35;
 
-    --accent: #4c6ef5;
-    --accent-hover: #5c7cfa;
+    --txt: #D2D2D2;
+    --txt-sec: #A2A2A7;
+
+    --accent: #4C6EF5;
+    --accent-hover: #5C7CFA;
 
     --danger: #f03e3e;
     --success: #37b24d;
     --warn: #fcc419;
 }
+
 
 
 
