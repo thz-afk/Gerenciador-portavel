@@ -887,34 +887,44 @@ class App {
     /**
      * Generates fictitious person
      */
-    generatePerson() {
+    generateName() {
         const names = [
-          'Joao', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana',
-          'Rafael', 'Beatriz', 'Andre', 'Fernanda', 'Gabriel', 'Larissa', 'Bruno',
-          'Camila', 'Diego', 'Patricia', 'Rodrigo', 'Natalia', 'Felipe', 'Aline',
-          'Gustavo', 'Isabela', 'Thiago', 'Renata', 'Eduardo', 'Carolina'
+            'Joao', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana',
+            'Rafael', 'Beatriz', 'Andre', 'Fernanda', 'Gabriel', 'Larissa', 'Bruno',
+            'Camila', 'Diego', 'Patricia', 'Rodrigo', 'Natalia', 'Felipe', 'Aline',
+            'Gustavo', 'Isabela', 'Thiago', 'Renata', 'Eduardo', 'Carolina'
         ];
-
         const surnames = [
-          'Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira',
-          'Gomes', 'Ribeiro', 'Almeida', 'Pereira', 'Rodrigues', 'Martins',
-          'Barbosa', 'Araujo', 'Cardoso', 'Melo', 'Correia', 'Teixeira', 'Dias',
-          'Nunes', 'Batista', 'Freitas', 'Vieira', 'Rocha'
+            'Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira',
+            'Gomes', 'Ribeiro', 'Almeida', 'Pereira', 'Rodrigues', 'Martins',
+            'Barbosa', 'Araujo', 'Cardoso', 'Melo', 'Correia', 'Teixeira', 'Dias',
+            'Nunes', 'Batista', 'Freitas', 'Vieira', 'Rocha'
         ];
-        
-        const name = names[Math.floor(Math.random() * names.length)] + ' ' + 
-                    surnames[Math.floor(Math.random() * surnames.length)];
-        
-        const cpf = this.generateCPF();
-        
+        return names[Math.floor(Math.random() * names.length)] + ' ' +
+            surnames[Math.floor(Math.random() * surnames.length)];
+    }
+
+    generateBirthdate() {
         const year = 1950 + Math.floor(Math.random() * 50);
         const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
         const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
-        const birthdate = `${day}/${month}/${year}`;
-        
+        return `${day}/${month}/${year}`;
+    }
+
+    generateAddress() {
+        return StreetsData[Math.floor(Math.random() * StreetsData.length)] + ', ' +
+            Math.floor(Math.random() * 9999);
+    }
+
+    generatePerson() {
+        const name = this.generateName();
+        const cpf = this.generateCPF();
+        const birthdate = this.generateBirthdate();
+        const address = this.generateAddress();
+
         const emailUser = name.toLowerCase().replace(' ', '') + Math.floor(Math.random() * 9999);
         const service = this.store.config.emailSvc || 'tuamae';
-        
+
         let email, link;
         if (service === 'tuamae') {
             email = emailUser + '@tuamaeaquelaursa.com';
@@ -923,17 +933,53 @@ class App {
             email = emailUser + '@firemail.com.br';
             link = `https://firemail.com.br/${emailUser}`;
         }
-        
-        const address = StreetsData[Math.floor(Math.random() * StreetsData.length)] + ', ' + 
-                       Math.floor(Math.random() * 9999);
-        
+
         const person = { name, cpf, birthdate, email, link, address };
-        
-        // Stores the current person to allow updating the link when the email domain changes
+
         this.currentPerson = person;
-        
-        this.displayPerson(person);
+        this.displayPerson(this.currentPerson);
     }
+
+    regenerateField(field) {
+        if (!this.currentPerson) return;
+
+        if (field === 'name') {
+            const newName = this.generateName();
+            if (this.currentPerson.name !== newName) {
+                this.currentPerson.name = newName;
+
+                const emailUser = newName.toLowerCase().replace(' ', '') + Math.floor(Math.random() * 9999);
+                const service = this.store.config.emailSvc || 'tuamae';
+
+                if (service === 'tuamae') {
+                    this.currentPerson.email = emailUser + '@tuamaeaquelaursa.com';
+                    this.currentPerson.link = `https://tuamaeaquelaursa.com/${emailUser}`;
+                } else {
+                    this.currentPerson.email = emailUser + '@firemail.com.br';
+                    this.currentPerson.link = `https://firemail.com.br/${emailUser}`;
+                }
+                this.displayPerson(this.currentPerson);
+            }
+            return;
+        }
+
+        const generators = {
+            cpf: this.generateCPF.bind(this),
+            birthdate: this.generateBirthdate.bind(this),
+            address: this.generateAddress.bind(this)
+        };
+
+        if (generators[field]) {
+            const newValue = generators[field]();
+            if (this.currentPerson[field] !== newValue) {
+                this.currentPerson[field] = newValue;
+                this.displayPerson(this.currentPerson);
+            }
+        } else {
+            console.warn(`Campo desconhecido: ${field}`);
+        }
+    }
+
     
     /**
      * Generates valid CPF
@@ -971,93 +1017,101 @@ class App {
     displayPerson(person) {
         const container = document.getElementById('personContent');
         if (!container) return;
-        
+
         container.innerHTML = '';
-        
+
         const card = document.createElement('div');
         card.className = 'person-card';
-        
-        // Fields
+
+        const fieldMap = {
+            'Nome': 'name',
+            'CPF': 'cpf',
+            'Nascimento': 'birthdate',
+            'Endereço': 'address'
+        };
+
         const fields = [
-            { label: 'Nome', value: person.name },
-            { label: 'CPF', value: person.cpf },
-            { label: 'Nascimento', value: person.birthdate },
-            { label: 'Email', value: person.email, hasActions: true, link: person.link },
-            { label: 'Endereço', value: person.address }
+            { label: 'Nome', value: person.name, id: 'personName', regenerate: true },
+            { label: 'CPF', value: person.cpf, id: 'personCPF', regenerate: true },
+            { label: 'Nascimento', value: person.birthdate, id: 'personBirthdate', regenerate: true },
+            { label: 'Email', value: person.email, id: 'personEmail', hasActions: true, link: person.link },
+            { label: 'Endereço', value: person.address, id: 'personAddress', regenerate: true }
         ];
-        
+
         fields.forEach(field => {
             const div = document.createElement('div');
             div.className = 'person-field';
-            
+
             const label = document.createElement('span');
             label.className = 'field-label';
             label.textContent = field.label + ':';
-            
-            const valDiv = document.createElement('span');
+
+            const valDiv = document.createElement('div');
             valDiv.className = 'field-value';
-            
+
+            const textSpan = document.createElement('span');
+            textSpan.id = field.id;
+            textSpan.textContent = field.value;
+            valDiv.appendChild(textSpan);
+
             if (field.hasActions) {
-                const emailSpan = document.createElement('span');
-                emailSpan.id = 'personEmail';
-                emailSpan.textContent = field.value;
-                
                 const editBtn = document.createElement('button');
                 editBtn.className = 'btn-icon';
                 editBtn.textContent = '✏';
                 editBtn.addEventListener('click', () => this.changeEmailDomain());
-                
+
                 const linkBtn = document.createElement('button');
                 linkBtn.className = 'btn-icon';
                 linkBtn.textContent = '↗';
                 linkBtn.id = 'personLinkBtn';
                 linkBtn.addEventListener('click', () => {
-                    // Gets the updated link based on the displayed email
                     const currentEmail = document.getElementById('personEmail').textContent;
                     const emailUser = currentEmail.split('@')[0];
                     const domain = currentEmail.split('@')[1];
-                    
+
                     let currentLink;
                     if (domain === 'tuamaeaquelaursa.com') {
                         currentLink = `https://tuamaeaquelaursa.com/${emailUser}`;
                     } else if (domain === 'firemail.com.br') {
                         currentLink = `https://firemail.com.br/${emailUser}`;
                     } else {
-                        currentLink = field.link; // Fallback to the original link
+                        currentLink = field.link;
                     }
-                    
                     window.open(currentLink, '_blank');
                 });
-                
-                valDiv.appendChild(emailSpan);
                 valDiv.appendChild(editBtn);
                 valDiv.appendChild(linkBtn);
-            } else {
-                valDiv.textContent = field.value;
             }
-            
+
+            if (field.regenerate) {
+                const regenBtn = document.createElement('button');
+                regenBtn.className = 'btn-icon';
+                regenBtn.textContent = '↻';
+                regenBtn.addEventListener('click', () => this.regenerateField(fieldMap[field.label]));
+                valDiv.appendChild(regenBtn);
+            }
+
             div.appendChild(label);
             div.appendChild(valDiv);
             card.appendChild(div);
         });
-        
+
         container.appendChild(card);
-        
-        // Buttons
+
         const actions = document.createElement('div');
         actions.style.display = 'flex';
         actions.style.gap = '12px';
-        
+
         const saveBtn = document.createElement('button');
         saveBtn.className = 'btn btn-primary';
         saveBtn.textContent = 'Salvar Preset';
-        saveBtn.addEventListener('click', () => this.savePerson(person));
-        
+        saveBtn.addEventListener('click', () => this.savePerson());
+
         const copyBtn = document.createElement('button');
         copyBtn.className = 'btn btn-secondary';
         copyBtn.textContent = 'Copiar Dados';
         copyBtn.addEventListener('click', () => this.copyPerson(person));
-        
+
         actions.appendChild(saveBtn);
         actions.appendChild(copyBtn);
         container.appendChild(actions);
@@ -1100,20 +1154,25 @@ class App {
     /**
      * Saves person
      */
-    async savePerson(person) {
+    async savePerson() {
         // Checks authentication before saving person
         if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.savePerson(person));
+            this.checkAuthAndDo(() => this.savePerson());
             return;
         }
         
-        person.id = 'prs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        if (!this.currentPerson) {
+            this.showToast('Nenhuma pessoa para salvar', 'error');
+            return;
+        }
+
+        this.currentPerson.id = 'prs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         
         if (!this.store.vault.prs) {
             this.store.vault.prs = [];
         }
         
-        this.store.vault.prs.push(person);
+        this.store.vault.prs.push(this.currentPerson);
         await this.store.saveVault();
         
         this.showToast('Pessoa salva');
