@@ -1,6 +1,5 @@
 'use strict';
 
-
 class App {
     constructor() {
         this.store = new VaultStore();
@@ -8,21 +7,15 @@ class App {
         this.pendingAction = null;
         this.editingNoteId = null;
         this.sessionTimerInterval = null;
-        
+
         this.init();
     }
-    
-    
-     // Initializes the application
-     
+
     init() {
         this.attachEventListeners();
-        
+
         if (this.store.exists()) {
-            // Checks if there is a valid saved session
             if (this.store.hasValidSession()) {
-                // Session still valid, but needs to be decrypted
-                // Shows a message indicating that it can continue
                 this.showLoginWithSession();
             } else {
                 this.showLogin();
@@ -31,10 +24,7 @@ class App {
             this.showRegister();
         }
     }
-    
-    
-     // Shows login screen with active session indication
-     
+
     showLoginWithSession() {
         const msg = document.getElementById('authMsg');
         if (msg) {
@@ -42,30 +32,18 @@ class App {
         }
         this.showLogin();
     }
-    
-    /**
-     * Attaches all event listeners
-     * Avoids inline handlers for CSP
-     */
+
     attachEventListeners() {
         // Auth form
-        const authForm = document.getElementById('authForm');
-        if (authForm) {
-            authForm.addEventListener('submit', (e) => this.handleAuth(e));
-        }
-        
-        // Re-auth form
-        const reauthForm = document.getElementById('reauthForm');
-        if (reauthForm) {
-            reauthForm.addEventListener('submit', (e) => this.handleReAuth(e));
-        }
-        
+        this.attachFormListener('authForm', (e) => this.handleAuth(e));
+        this.attachFormListener('reauthForm', (e) => this.handleReAuth(e));
+
         // Menu items
         document.querySelectorAll('.menu-item').forEach(item => {
             item.addEventListener('click', (e) => this.switchSection(e));
         });
-        
-        // Buttons
+
+        // Standard buttons
         this.attachButtonListener('logoutBtn', () => this.logout());
         this.attachButtonListener('configBtn', () => this.openModal('configModal'));
         this.attachButtonListener('extendSessionBtn', () => this.extendSession());
@@ -78,830 +56,873 @@ class App {
         this.attachButtonListener('genPersonBtn', () => this.generatePerson());
         this.attachButtonListener('showSavedPersonsBtn', () => this.showSavedPersons());
         this.attachButtonListener('saveConfigBtn', () => this.saveConfig());
-        
-        // Initializes session timer
+
+        // Database operations
+        this.attachButtonListener('openDbModalBtn', () => this.checkAuthAndDo(() => this.openModal('dbModal')));
+        this.attachButtonListener('btnExportAction', () => this.handleExport());
+        this.attachButtonListener('btnImportAction', () => this.handleImport());
+
         this.startSessionTimer();
-        
-        // Modal close buttons
+
+        // Modal close
         document.querySelectorAll('.modal-close').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const modal = e.target.dataset.modal;
                 if (modal) this.closeModal(modal);
             });
         });
-        
+
         // Forms
         this.attachFormListener('blkForm', (e) => this.saveBlock(e));
         this.attachFormListener('pwdForm', (e) => this.savePassword(e));
         this.attachFormListener('noteForm', (e) => this.saveNote(e));
     }
-    
+
     attachButtonListener(id, handler) {
         const btn = document.getElementById(id);
         if (btn) btn.addEventListener('click', handler);
     }
-    
+
     attachFormListener(id, handler) {
         const form = document.getElementById(id);
         if (form) form.addEventListener('submit', handler);
     }
-    
-    /**
-     * Shows login screen
-     */
+
+    // Import/Export Logic
+
+    async handleExport() {
+        if (!this.store.isAuthenticated()) {
+            this.showToast('Faça login para exportar', 'error');
+            return;
+        }
+
+        const format = document.getElementById('exportFormat').value;
+        const password = document.getElementById('exportFilePwd').value;
+        const btn = document.getElementById('btnExportAction');
+
+        if ((format === 'kdbx' || format === 'json_enc') && !password) {
+            this.showToast('Defina uma senha para proteger o arquivo', 'error');
+            document.getElementById('exportFilePwd').focus();
+            return;
+        }
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Gerando arquivo...';
+
+        try {
+            let data, filename, mime;
+            const dateStr = new Date().toISOString().slice(0, 10);
+
+            if (format === 'csv') {
+                data = this.generateCSV();
+                filename = `SecureVault_Backup_${dateStr}.csv`;
+                mime = 'text/csv';
+            } else if (format === 'json') {
+                data = JSON.stringify(this.store.vault, null, 2);
+                filename = `SecureVault_Backup_${dateStr}.json`;
+                mime = 'application/json';
+            } else if (format === 'json_enc') {
+                const jsonStr = JSON.stringify(this.store.vault);
+                data = await this.encryptDataAES(jsonStr, password);
+                filename = `SecureVault_Encrypted_${dateStr}.json`;
+                mime = 'application/json';
+            } else if (format === 'kdbx') {
+                if (!window.kdbxweb) throw new Error('Biblioteca kdbxweb não carregada.');
+                data = await this.generateKDBX(password);
+                filename = `SecureVault_${dateStr}.kdbx`;
+                mime = 'application/octet-stream';
+            }
+
+            this.downloadFile(data, filename, mime);
+            this.showToast('Backup gerado com sucesso!');
+            this.closeModal('dbModal');
+            document.getElementById('exportFilePwd').value = '';
+        } catch (err) {
+            console.error(err);
+            this.showToast('Erro ao exportar: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    async handleImport() {
+        const fileInput = document.getElementById('importFile');
+        const file = fileInput.files[0];
+        const mode = document.getElementById('importMode').value;
+        const password = document.getElementById('importFilePwd').value;
+        const btn = document.getElementById('btnImportAction');
+
+        if (!file) {
+            this.showToast('Selecione um arquivo primeiro', 'error');
+            return;
+        }
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Processando...';
+
+        try {
+            let importedVault = { pwds: [], notes: [], blks: [] };
+            let rawText;
+
+            if (file.name.toLowerCase().endsWith('.csv')) {
+                rawText = await file.text();
+                importedVault = this.parseCSV(rawText);
+            } else if (file.name.toLowerCase().endsWith('.json')) {
+                rawText = await file.text();
+                let json;
+                try {
+                    json = JSON.parse(rawText);
+                } catch (e) {
+                    throw new Error('Arquivo JSON inválido');
+                }
+
+                if (json.salt && json.iv && json.data) {
+                    if (!password) {
+                        document.getElementById('importPwdGroup').style.display = 'block';
+                        throw new Error('Senha necessária para descriptografar');
+                    }
+                    const decryptedStr = await this.decryptDataAES(json, password);
+                    importedVault = JSON.parse(decryptedStr);
+                } else {
+                    importedVault = json;
+                }
+            } else if (file.name.toLowerCase().endsWith('.kdbx')) {
+                if (!window.kdbxweb) throw new Error('Biblioteca kdbxweb necessária');
+                if (!password) {
+                    document.getElementById('importPwdGroup').style.display = 'block';
+                    throw new Error('Senha necessária para arquivo .kdbx');
+                }
+                const arrayBuffer = await file.arrayBuffer();
+                importedVault = await this.parseKDBX(arrayBuffer, password);
+            } else {
+                throw new Error('Formato não suportado. Use .kdbx, .csv ou .json');
+            }
+
+            if (!importedVault || (!importedVault.pwds && !importedVault.entries && !importedVault.blks)) {
+                throw new Error('Nenhum dado válido encontrado.');
+            }
+
+            if (mode === 'replace') {
+                if (!confirm('ATENÇÃO: Isso apagará TODOS os dados atuais. Continuar?')) return;
+                this.store.vault = importedVault;
+                if (!this.store.vault.blks) this.store.vault.blks = [{ id: 'default', name: 'Geral' }];
+                if (!this.store.vault.pwds) this.store.vault.pwds = [];
+                if (!this.store.vault.notes) this.store.vault.notes = [];
+            } else {
+                let count = 0;
+                if (importedVault.pwds && Array.isArray(importedVault.pwds)) {
+                    importedVault.pwds.forEach(p => {
+                        p.id = 'imp_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                        const blkExists = this.store.vault.blks.find(b => b.id === p.blk);
+                        if (!blkExists) p.blk = 'default';
+                        this.store.vault.pwds.push(p);
+                        count++;
+                    });
+                }
+                if (importedVault.notes && Array.isArray(importedVault.notes)) {
+                    importedVault.notes.forEach(n => {
+                        n.id = 'imp_n_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                        const blkExists = this.store.vault.blks.find(b => b.id === n.blk);
+                        if (!blkExists) n.blk = 'default';
+                        this.store.vault.notes.push(n);
+                    });
+                }
+                this.showToast(`${count} itens importados.`);
+            }
+
+            await this.store.saveVault();
+            this.loadBlocks();
+            this.loadPasswords();
+            this.loadNotes();
+            this.closeModal('dbModal');
+
+            fileInput.value = '';
+            document.getElementById('importFilePwd').value = '';
+            document.getElementById('importPwdGroup').style.display = 'none';
+
+        } catch (err) {
+            console.error(err);
+            let msg = err.message;
+            if (err.code === 'InvalidKey') msg = 'Senha incorreta do arquivo KDBX.';
+            if (msg.includes('argon2')) msg = 'Este arquivo usa Argon2 (não suportado). Exporte como AES.';
+            this.showToast('Erro: ' + msg, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    // Helpers
+
+    generateCSV() {
+        const header = ['Bloco', 'Site', 'Usuario', 'Senha', 'Notas'];
+        const rows = this.store.vault.pwds.map(p => {
+            const blkName = this.store.vault.blks.find(b => b.id === p.blk)?.name || 'Geral';
+            const esc = (t) => `"${String(t || '').replace(/"/g, '""')}"`;
+            return [
+                esc(blkName),
+                esc(p.site),
+                esc(p.usr),
+                esc(p.val),
+                esc('')
+            ].join(',');
+        });
+        return [header.join(','), ...rows].join('\n');
+    }
+
+
+    async generateKDBX(password) {
+        const safeFilePassword = String(password || '');
+        const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(safeFilePassword));
+
+        // Create database
+        const db = kdbxweb.Kdbx.create(credentials, 'SecureVault Export');
+
+        // Set AES for compatibility
+        // If setKdf doesn't exist (very old versions), default is used (usually AES or ChaCha20)
+        if (typeof db.setKdf === 'function') {
+            try {
+                db.setKdf(kdbxweb.Consts.KdfId.Aes);
+            } catch (e) {
+                console.warn("KDBX: Não foi possível definir KDF AES explicitamente. Usando padrão.", e);
+            }
+        }
+
+        const defaultGroup = db.getDefaultGroup();
+        defaultGroup.name = 'SecureVault';
+
+        const groupMap = {};
+
+        // Create group structure
+        this.store.vault.blks.forEach(blk => {
+            const blkName = String(blk.name || 'Sem Nome');
+            if (blk.id === 'default') {
+                groupMap['default'] = defaultGroup;
+            } else {
+                const grp = db.createGroup(defaultGroup, blkName);
+                groupMap[blk.id] = grp;
+            }
+        });
+
+        // Add passwords
+        this.store.vault.pwds.forEach(p => {
+            const targetGroup = groupMap[p.blk] || defaultGroup;
+            const entry = db.createEntry(targetGroup);
+
+            // Strict sanitization to avoid InvalidArg
+            const safeTitle = String(p.site || 'Sem Título');
+            const safeUser = String(p.usr || '');
+            const safePass = String(p.val || '');
+            const safeUrl = String(p.site || '');
+
+            entry.fields.set('Title', safeTitle);
+            entry.fields.set('UserName', safeUser);
+            entry.fields.set('URL', safeUrl);
+
+            // ProtectedValue must receive a non-null string
+            try {
+                const protectedPass = kdbxweb.ProtectedValue.fromString(safePass);
+                entry.fields.set('Password', protectedPass);
+            } catch (e) {
+                // Fallback if ProtectedValue fails, saves as plain text if necessary
+                console.warn("Erro ao proteger senha, salvando como texto", e);
+                entry.fields.set('Password', safePass);
+            }
+
+            entry.times.creationTime = new Date();
+            entry.times.lastModificationTime = new Date();
+        });
+
+        return await db.save();
+    }
+
+    parseCSV(text) {
+        const lines = text.split(/\r?\n/);
+        const vault = { blks: [], pwds: [], notes: [] };
+        for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            const matches = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+            const cols = matches.map(m => m.replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+            if (cols.length >= 3) {
+                vault.pwds.push({
+                    blk: 'default',
+                    site: cols[1] || 'Sem Nome',
+                    usr: cols[2] || '',
+                    val: cols[3] || ''
+                });
+            }
+        }
+        return vault;
+    }
+
+    async parseKDBX(arrayBuffer, password) {
+        const safePassword = String(password || '');
+        const credentials = new kdbxweb.Credentials(kdbxweb.ProtectedValue.fromString(safePassword));
+        const db = await kdbxweb.Kdbx.load(arrayBuffer, credentials);
+        const vault = { blks: [], pwds: [], notes: [] };
+
+        const traverse = (group) => {
+            group.entries.forEach(entry => {
+                const title = entry.fields.get('Title') || 'Sem Titulo';
+                const user = entry.fields.get('UserName') || '';
+
+                const passField = entry.fields.get('Password');
+                let passVal = '';
+
+                if (passField) {
+                    if (passField instanceof kdbxweb.ProtectedValue) {
+                         passVal = passField.getText();
+                    } else if (typeof passField.getText === 'function') {
+                        passVal = passField.getText();
+                    } else {
+                        passVal = String(passField);
+                    }
+                }
+
+                if (passVal) {
+                    vault.pwds.push({
+                        blk: 'default',
+                        site: title,
+                        usr: user,
+                        val: passVal
+                    });
+                }
+            });
+            group.groups.forEach(g => traverse(g));
+        };
+
+        if (db.getDefaultGroup()) {
+            traverse(db.getDefaultGroup());
+        }
+
+        return vault;
+    }
+
+    async encryptDataAES(dataStr, pwd) {
+        const enc = new TextEncoder();
+        const salt = window.crypto.getRandomValues(new Uint8Array(16));
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(pwd), { name: "PBKDF2" }, false, ["deriveKey"]);
+        const key = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+        const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(dataStr));
+        const toB64 = (u8) => btoa(String.fromCharCode(...u8));
+        return JSON.stringify({ salt: toB64(salt), iv: toB64(iv), data: toB64(new Uint8Array(encrypted)) });
+    }
+
+    async decryptDataAES(jsonObj, pwd) {
+        const fromB64 = (str) => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+        const salt = fromB64(jsonObj.salt);
+        const iv = fromB64(jsonObj.iv);
+        const data = fromB64(jsonObj.data);
+        const enc = new TextEncoder();
+        const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(pwd), { name: "PBKDF2" }, false, ["deriveKey"]);
+        const key = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, keyMaterial, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+        const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+        return new TextDecoder().decode(decrypted);
+    }
+
+    downloadFile(content, filename, mime) {
+        const blob = (content instanceof Blob) ? content : new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+
+    // --- UI LOGIC ---
+
     showLogin() {
         const authMsg = document.getElementById('authMsg');
         const authBtnTxt = document.getElementById('authBtnTxt');
         const confirmGroup = document.getElementById('confirmGroup');
-        
         if (authMsg) authMsg.textContent = 'Digite sua senha mestre para acessar';
         if (authBtnTxt) authBtnTxt.textContent = 'Entrar';
         if (confirmGroup) confirmGroup.style.display = 'none';
     }
-    
-    /**
-     * Shows registration screen
-     */
+
     showRegister() {
         const authMsg = document.getElementById('authMsg');
         const authBtnTxt = document.getElementById('authBtnTxt');
         const confirmGroup = document.getElementById('confirmGroup');
-        
         if (authMsg) authMsg.textContent = 'Crie uma senha mestre para proteger seus dados';
         if (authBtnTxt) authBtnTxt.textContent = 'Criar Senha';
         if (confirmGroup) confirmGroup.style.display = 'block';
     }
-    
-    /**
-     * Processes authentication
-     */
+
     async handleAuth(e) {
         e.preventDefault();
-        
-        // Rate limiting
         if (!Security.checkRate('auth')) {
             this.showToast('Muitas tentativas. Aguarde 1 minuto.', 'error');
             return;
         }
-        
         const pwdInput = document.getElementById('masterPwd');
         const confInput = document.getElementById('confirmPwd');
         const btn = document.getElementById('authBtn');
-        
         const password = pwdInput.value;
         const confirm = confInput ? confInput.value : '';
-        
-        // Validation
+
         if (!Security.validate(password, 128)) {
             this.showToast('Senha contém caracteres inválidos', 'error');
             return;
         }
-        
-        // Disables button during processing
         btn.disabled = true;
-        
+
         try {
-            // Checks if the session should be extended (30 minutes)
             const extSession = document.getElementById('extendSession');
-            let sessDuration = extSession && extSession.checked ? 1800000 : 60000; // 30 minutos ou 1 minuto
-            
-            // If there is already a valid session, preserves the remaining time
+            let sessDuration = extSession && extSession.checked ? 1800000 : 60000;
             if (this.store.hasValidSession()) {
                 const rem = this.store.getSessionTimeRemaining();
-                if (rem > 0) {
-                    // Uses the remaining time + new chosen duration
-                    sessDuration = rem + (extSession && extSession.checked ? 1800000 : 60000);
-                }
+                if (rem > 0) sessDuration = rem + (extSession && extSession.checked ? 1800000 : 60000);
             }
-            
+
             if (this.store.exists()) {
-                // Login
                 const success = await this.store.openVault(password, sessDuration);
-                
-                if (success) {
-                    this.enterDashboard();
-                } else {
-                    this.showToast('Senha incorreta', 'error');
-                }
+                if (success) this.enterDashboard();
+                else this.showToast('Senha incorreta', 'error');
             } else {
-                // Registration
                 if (password !== confirm) {
                     this.showToast('Senhas não coincidem', 'error');
                     return;
                 }
-                
                 await this.store.createVault(password, sessDuration);
                 this.enterDashboard();
             }
         } finally {
-            // Clears fields and re-enables the button
             pwdInput.value = '';
             if (confInput) confInput.value = '';
             btn.disabled = false;
         }
     }
-    
-    /**
-     * Processes re-authentication
-     */
+
     async handleReAuth(e) {
         e.preventDefault();
-        
         if (!Security.checkRate('reauth')) {
             this.showToast('Muitas tentativas. Aguarde.', 'error');
             return;
         }
-        
         const pwdInput = document.getElementById('authPwd');
         const password = pwdInput.value;
-        
+
         if (!Security.validate(password, 128)) {
             this.showToast('Senha inválida', 'error');
             return;
         }
-        
+
         const success = await this.store.reAuthenticate(password);
-        
         if (success) {
             this.closeModal('authModal');
-            
-            // Executes pending action
             if (this.pendingAction) {
                 this.pendingAction();
                 this.pendingAction = null;
             }
-            
             this.showToast('Autenticado', 'success');
         } else {
             this.showToast('Senha incorreta', 'error');
         }
-        
         pwdInput.value = '';
     }
-    
-    /**
-     * Enters the dashboard
-     */
+
     enterDashboard() {
-        // Checks authentication before entering the dashboard
         if (!this.store.isAuthenticated()) {
             this.showToast('Autenticação necessária', 'error');
             return;
         }
-        
         document.getElementById('authScreen').style.display = 'none';
         document.getElementById('dashboard').style.display = 'block';
-        
         this.loadBlocks();
         this.loadPasswords();
         this.loadNotes();
-        
-        // Starts session timer
         this.startSessionTimer();
-        
         this.showToast('Bem-vindo!', 'success');
     }
-    
-    /**
-     * Starts session timer
-     */
+
     startSessionTimer() {
-        // Clears previous timer if it exists
-        if (this.sessionTimerInterval) {
-            clearInterval(this.sessionTimerInterval);
-        }
-        
-        // Updates immediately
+        if (this.sessionTimerInterval) clearInterval(this.sessionTimerInterval);
         this.updateSessionTimer();
-        
-        // Updates every second
-        this.sessionTimerInterval = setInterval(() => {
-            this.updateSessionTimer();
-        }, 1000);
+        this.sessionTimerInterval = setInterval(() => this.updateSessionTimer(), 1000);
     }
-    
-    /**
-     * Updates the session timer display
-     */
+
     updateSessionTimer() {
         const timerDisp = document.getElementById('timerDisplay');
         const extendBtn = document.getElementById('extendSessionBtn');
-        const sessTimer = document.getElementById('sessionTimer');
-        
-        if (!timerDisp || !extendBtn || !sessTimer) return;
-        
+        if (!timerDisp || !extendBtn) return;
+
         if (!this.store.isAuthenticated()) {
             timerDisp.textContent = 'Expirada';
             timerDisp.style.color = 'var(--danger)';
             extendBtn.disabled = true;
             return;
         }
-        
         const rem = this.store.getSessionTimeRemaining();
-        
         if (rem <= 0) {
             timerDisp.textContent = 'Expirada';
             timerDisp.style.color = 'var(--danger)';
             extendBtn.disabled = true;
             return;
         }
-        
-        // Calculates minutes and seconds
         const totalSec = Math.floor(rem / 1000);
         const min = Math.floor(totalSec / 60);
         const sec = totalSec % 60;
-        
-        // Formats as MM:SS
-        const fmt = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-        timerDisp.textContent = fmt;
-        
-        // Changes color if below 1 minute
-        if (totalSec < 60) {
-            timerDisp.style.color = 'var(--danger)';
-        } else if (totalSec < 300) { // Less than 5 minutes
-            timerDisp.style.color = 'var(--warn)';
-        } else {
-            timerDisp.style.color = 'var(--txt-sec)';
-        }
-        
+        timerDisp.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        if (totalSec < 60) timerDisp.style.color = 'var(--danger)';
+        else if (totalSec < 300) timerDisp.style.color = 'var(--warn)';
+        else timerDisp.style.color = 'var(--txt-sec)';
         extendBtn.disabled = false;
     }
-    
-    /**
-     * Extends session by 30 minutes
-     */
+
     extendSession() {
-        // Checks authentication before extending
-        if (!this.store.isAuthenticated()) {
-            this.showToast('Sessão expirada. Faça login novamente.', 'error');
-            return;
-        }
-        
-        const success = this.store.extendSession(30);
-        
-        if (success) {
+        if (!this.store.isAuthenticated()) return;
+        if (this.store.extendSession(30)) {
             this.showToast('Sessão prolongada em 30 minutos', 'success');
             this.updateSessionTimer();
-        } else {
-            this.showToast('Não foi possível prolongar a sessão', 'error');
         }
     }
-    
-    /**
-     * Clears the interface when authentication expires
-     */
-    clearInterfaceOnExpiry() {
-        // Clears sensitive data from the interface
-        const pwdList = document.getElementById('pwdList');
-        if (pwdList) {
-            pwdList.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação expirada</p>';
-        }
-        
-        const notesList = document.getElementById('notesList');
-        if (notesList) {
-            notesList.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação expirada</p>';
-        }
-        
-        const blkList = document.getElementById('blkList');
-        if (blkList) {
-            blkList.innerHTML = '';
-        }
-    }
-    
-    /**
-     * Checks authentication before a sensitive action
-     */
+
     checkAuthAndDo(action) {
-        if (this.store.isAuthenticated()) {
-            action();
-        } else {
+        if (this.store.isAuthenticated()) action();
+        else {
             this.pendingAction = action;
             this.openModal('authModal');
         }
     }
-    
-    /**
-     * Logout
-     */
+
     logout() {
         if (confirm('Deseja sair?')) {
-            // Clears session timer
-            if (this.sessionTimerInterval) {
-                clearInterval(this.sessionTimerInterval);
-                this.sessionTimerInterval = null;
-            }
-            
+            if (this.sessionTimerInterval) clearInterval(this.sessionTimerInterval);
             this.store.lock();
             location.reload();
         }
     }
-    
-    /**
-     * Switches active section
-     */
+
     switchSection(e) {
         const section = e.currentTarget.dataset.section;
         if (!section) return;
-        
-        // Checks authentication before switching sections (except for non-sensitive sections)
         const sensSections = ['passwords', 'notes'];
         if (sensSections.includes(section) && !this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.switchSection(e));
             return;
         }
-        
-        // Updates menu
-        document.querySelectorAll('.menu-item').forEach(item => {
-            item.classList.remove('active');
-        });
+        document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
         e.currentTarget.classList.add('active');
-        
-        // Updates content
-        document.querySelectorAll('.section').forEach(sec => {
-            sec.classList.remove('active');
-        });
-        
+        document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
         const targetSec = document.getElementById(section);
-        if (targetSec) {
-            targetSec.classList.add('active');
-        }
-        
-        // Reloads data if necessary and authenticated
+        if (targetSec) targetSec.classList.add('active');
+
         if (this.store.isAuthenticated()) {
-            if (section === 'passwords') {
-                this.loadPasswords();
-            } else if (section === 'notes') {
-                this.loadNotes();
-            }
+            if (section === 'passwords') this.loadPasswords();
+            else if (section === 'notes') this.loadNotes();
         }
     }
-    
-    /**
-     * Loads block list
-     */
+
     loadBlocks() {
-        // Checks authentication before loading blocks
         if (!this.store.isAuthenticated()) {
-            const container = document.getElementById('blkList');
-            if (container) {
-                container.innerHTML = '';
-            }
+            const c = document.getElementById('blkList');
+            if (c) c.innerHTML = '';
             return;
         }
-        
         const container = document.getElementById('blkList');
         if (!container || !this.store.vault) return;
-        
-        // Clears container
+
         container.innerHTML = '';
-        
         this.store.vault.blks.forEach(block => {
             const div = document.createElement('div');
             div.className = `blk-item ${block.id === this.currentBlock ? 'active' : ''}`;
-            
-            // Click event on the entire div for better hitbox
             div.style.cursor = 'pointer';
             div.addEventListener('click', (e) => {
-                // Prevents click if it's on the delete button
-                if (e.target.tagName === 'BUTTON') {
-                    return;
-                }
+                if (e.target.tagName === 'BUTTON') return;
                 this.selectBlock(block.id);
             });
-            
+
             const span = document.createElement('span');
-            span.textContent = block.name; // textContent prevents XSS
-            
+            span.textContent = block.name;
             div.appendChild(span);
-            
-            // Delete button (except default)
+
             if (block.id !== 'default') {
                 const delBtn = document.createElement('button');
                 delBtn.className = 'btn-icon';
                 delBtn.style.padding = '4px';
                 delBtn.textContent = '✕';
                 delBtn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Prevents propagation to the div
+                    e.stopPropagation();
                     this.deleteBlock(block.id);
                 });
                 div.appendChild(delBtn);
             }
-            
             container.appendChild(div);
         });
     }
-    
-    /**
-     * Selects block
-     */
+
     selectBlock(id) {
-        // Checks authentication before switching blocks
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.selectBlock(id));
             return;
         }
-        
         this.currentBlock = id;
         this.loadBlocks();
         this.loadPasswords();
         this.loadNotes();
     }
-    
-    /**
-     * Saves new block
-     */
+
     async saveBlock(e) {
         e.preventDefault();
-        
-        // Checks authentication before saving
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => {
-                const form = document.getElementById('blkForm');
-                if (form) form.requestSubmit();
-            });
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
         const nameInput = document.getElementById('blkName');
         const name = nameInput.value;
-        
+
         if (!Security.validate(name, 50)) {
             this.showToast('Nome inválido', 'error');
             return;
         }
-        
         const id = 'blk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
         this.store.vault.blks.push({ id, name });
         await this.store.saveVault();
-        
         this.loadBlocks();
         this.closeModal('blkModal');
         this.showToast('Bloco criado');
-        
         nameInput.value = '';
     }
-    
-    /**
-     * Deletes block
-     */
+
     async deleteBlock(id) {
-        // Checks authentication before deleting
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.deleteBlock(id));
-            return;
-        }
-        
-        // Protects default block
-        if (id === 'default') {
-            this.showToast('Não é possível excluir o bloco padrão', 'error');
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
+        if (id === 'default') return;
         if (!confirm('Excluir bloco e todo conteúdo?')) return;
-        
+
         this.store.vault.blks = this.store.vault.blks.filter(b => b.id !== id);
         this.store.vault.pwds = this.store.vault.pwds.filter(p => p.blk !== id);
         this.store.vault.notes = this.store.vault.notes.filter(n => n.blk !== id);
-        
+
         await this.store.saveVault();
-        
-        if (this.currentBlock === id) {
-            this.currentBlock = 'default';
-        }
-        
+        if (this.currentBlock === id) this.currentBlock = 'default';
         this.loadBlocks();
         this.loadPasswords();
         this.loadNotes();
-        
         this.showToast('Bloco excluído');
     }
-    
-    /**
-     * Loads password list
-     */
+
     loadPasswords() {
-        // Checks authentication before loading passwords
         if (!this.store.isAuthenticated()) {
-            const container = document.getElementById('pwdList');
-            if (container) {
-                container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação necessária</p>';
-            }
+            const c = document.getElementById('pwdList');
+            if (c) c.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação necessária</p>';
             return;
         }
-        
         const container = document.getElementById('pwdList');
         if (!container || !this.store.vault) return;
-        
+
         const pwds = this.store.vault.pwds.filter(p => p.blk === this.currentBlock);
-        
         if (pwds.length === 0) {
             container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Nenhuma senha salva</p>';
             return;
         }
-        
         container.innerHTML = '';
-        
+
         pwds.forEach(pwd => {
             const card = document.createElement('div');
             card.className = 'pwd-card';
-            
-            // Header
+
             const header = document.createElement('div');
             header.className = 'pwd-header';
-            
+
             const info = document.createElement('div');
-            
             const site = document.createElement('div');
             site.className = 'pwd-site';
-            site.textContent = pwd.site; // textContent prevents XSS
-            
+            site.textContent = pwd.site;
             const user = document.createElement('div');
             user.className = 'pwd-user';
             user.textContent = pwd.usr;
-            
             info.appendChild(site);
             info.appendChild(user);
-            
+
             const expandBtn = document.createElement('button');
             expandBtn.className = 'btn btn-expand';
             expandBtn.textContent = 'Ver Mais';
-            
             header.appendChild(info);
             header.appendChild(expandBtn);
-            
-            // Details
+
             const dtls = document.createElement('div');
             dtls.className = 'pwd-details';
             dtls.id = `pwd-${pwd.id}`;
-            
+
             const field = document.createElement('div');
             field.className = 'pwd-field';
-            
             const label = document.createElement('label');
             label.textContent = 'Senha';
-            
+
             const wrap = document.createElement('div');
             wrap.className = 'pwd-value-wrapper';
-            
+
             const value = document.createElement('div');
             value.className = 'pwd-value';
             value.id = `pwdval-${pwd.id}`;
             value.textContent = '••••••••';
-            
+
             const showBtn = document.createElement('button');
             showBtn.className = 'btn-icon';
             showBtn.textContent = 'Ver';
             showBtn.addEventListener('click', () => this.togglePasswordVisibility(pwd.id));
-            
+
             const copyBtn = document.createElement('button');
             copyBtn.className = 'btn-icon';
             copyBtn.textContent = 'Copiar';
             copyBtn.addEventListener('click', () => this.copyPassword(pwd.id));
-            
+
             wrap.appendChild(value);
             wrap.appendChild(showBtn);
             wrap.appendChild(copyBtn);
-            
             field.appendChild(label);
             field.appendChild(wrap);
-            
+
             const actions = document.createElement('div');
             actions.style.marginTop = '16px';
             actions.style.display = 'flex';
             actions.style.gap = '8px';
-            
+
             const delBtn = document.createElement('button');
             delBtn.className = 'btn btn-danger';
             delBtn.textContent = 'Excluir';
             delBtn.addEventListener('click', () => this.deletePassword(pwd.id));
-            
             actions.appendChild(delBtn);
-            
+
             dtls.appendChild(field);
             dtls.appendChild(actions);
-            
-            // Toggle details
-            header.addEventListener('click', () => {
-                dtls.classList.toggle('show');
-            });
-            
+
+            header.addEventListener('click', () => dtls.classList.toggle('show'));
             card.appendChild(header);
             card.appendChild(dtls);
             container.appendChild(card);
         });
     }
-    
-    /**
-     * Opens password modal
-     */
+
     openPasswordModal() {
         const select = document.getElementById('pwdBlk');
         if (!select) return;
-        
         select.innerHTML = '';
-        
         this.store.vault.blks.forEach(blk => {
             const option = document.createElement('option');
             option.value = blk.id;
             option.textContent = blk.name;
-            if (blk.id === this.currentBlock) {
-                option.selected = true;
-            }
+            if (blk.id === this.currentBlock) option.selected = true;
             select.appendChild(option);
         });
-        
         this.openModal('pwdModal');
     }
-    
-    /**
-     * Saves password
-     */
+
     async savePassword(e) {
         e.preventDefault();
-        
-        // Checks authentication before saving password
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => {
-                const form = document.getElementById('pwdForm');
-                if (form) form.requestSubmit();
-            });
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
+
         const blk = document.getElementById('pwdBlk').value;
         const site = document.getElementById('pwdSite').value;
         const usr = document.getElementById('pwdUsr').value;
         const val = document.getElementById('pwdVal').value;
-        
-        // Validation
-        if (!Security.validate(site, 100) || 
-            !Security.validate(usr, 200) || 
-            !Security.validate(val, 500)) {
+
+        if (!Security.validate(site, 100) || !Security.validate(usr, 200) || !Security.validate(val, 500)) {
             this.showToast('Dados inválidos', 'error');
             return;
         }
-        
         const pwd = {
             id: 'pwd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-            blk,
-            site,
-            usr,
-            val
+            blk, site, usr, val
         };
-        
+
         this.store.vault.pwds.push(pwd);
         await this.store.saveVault();
-        
         this.loadPasswords();
         this.closeModal('pwdModal');
         this.showToast('Senha salva');
-        
         e.target.reset();
     }
-    
-    /**
-     * Toggles password visibility
-     */
+
     togglePasswordVisibility(id) {
-        // Checks authentication before showing password
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.togglePasswordVisibility(id));
             return;
         }
-        
         const element = document.getElementById(`pwdval-${id}`);
         if (!element) return;
-        
         const pwd = this.store.vault.pwds.find(p => p.id === id);
         if (!pwd) return;
-        
-        if (element.textContent === '••••••••') {
-            element.textContent = pwd.val;
-        } else {
-            element.textContent = '••••••••';
-        }
+        element.textContent = element.textContent === '••••••••' ? pwd.val : '••••••••';
     }
-    
-    /**
-     * Copies password
-     */
+
     copyPassword(id) {
-        // Checks authentication before copying password
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.copyPassword(id));
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
         const pwd = this.store.vault.pwds.find(p => p.id === id);
-        if (!pwd) return;
-        
-        navigator.clipboard.writeText(pwd.val).then(() => {
-            this.showToast('Senha copiada');
-        }).catch(() => {
-            this.showToast('Erro ao copiar', 'error');
-        });
-    }
-    
-    /**
-     * Deletes password
-     */
-    async deletePassword(id) {
-        // Checks authentication before deleting password
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.deletePassword(id));
-            return;
+        if (pwd) {
+            navigator.clipboard.writeText(pwd.val)
+                .then(() => this.showToast('Senha copiada'))
+                .catch(() => this.showToast('Erro ao copiar', 'error'));
         }
-        
+    }
+
+    async deletePassword(id) {
+        if (!this.store.isAuthenticated()) return;
         if (!confirm('Excluir senha?')) return;
-        
         this.store.vault.pwds = this.store.vault.pwds.filter(p => p.id !== id);
         await this.store.saveVault();
-        
         this.loadPasswords();
         this.showToast('Senha excluída');
     }
-    
-    /**
-     * Generates strong password
-     */
+
     generatePassword() {
         const len = parseInt(document.getElementById('genLen').value) || 16;
         const upper = document.getElementById('genUpper').checked;
         const lower = document.getElementById('genLower').checked;
         const num = document.getElementById('genNum').checked;
         const sym = document.getElementById('genSym').checked;
-        
+
         let charset = '';
         if (upper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
         if (lower) charset += 'abcdefghijklmnopqrstuvwxyz';
         if (num) charset += '0123456789';
         if (sym) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
-        
+
         if (!charset) {
             this.showToast('Selecione pelo menos uma opção', 'error');
             return;
         }
-        
+
         let password = '';
         const array = new Uint8Array(len);
-        crypto.getRandomValues(array);
-        
+        window.crypto.getRandomValues(array);
         for (let i = 0; i < len; i++) {
             password += charset[array[i] % charset.length];
         }
-        
+
         const input = document.getElementById('genPwd');
         if (input) input.value = password;
     }
-    
-    /**
-     * Copies generated password
-     */
+
     copyGenerated() {
         const input = document.getElementById('genPwd');
-        if (!input || !input.value) return;
-        
-        navigator.clipboard.writeText(input.value).then(() => {
-            this.showToast('Copiado!');
-        });
+        if (input && input.value) {
+            navigator.clipboard.writeText(input.value).then(() => this.showToast('Copiado!'));
+        }
     }
-    
-    /**
-     * Generates quick password
-     */
+
     generateQuickPassword() {
         const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
         let password = '';
         const array = new Uint8Array(16);
-        crypto.getRandomValues(array);
-        
+        window.crypto.getRandomValues(array);
         for (let i = 0; i < 16; i++) {
             password += charset[array[i] % charset.length];
         }
-        
         const input = document.getElementById('pwdVal');
         if (input) input.value = password;
     }
-    
-    /**
-     * Generates fictitious person
-     */
+
     generateName() {
-        const names = [
-            'Joao', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana',
-            'Rafael', 'Beatriz', 'Andre', 'Fernanda', 'Gabriel', 'Larissa', 'Bruno',
-            'Camila', 'Diego', 'Patricia', 'Rodrigo', 'Natalia', 'Felipe', 'Aline',
-            'Gustavo', 'Isabela', 'Thiago', 'Renata', 'Eduardo', 'Carolina'
-        ];
-        const surnames = [
-            'Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira',
-            'Gomes', 'Ribeiro', 'Almeida', 'Pereira', 'Rodrigues', 'Martins',
-            'Barbosa', 'Araujo', 'Cardoso', 'Melo', 'Correia', 'Teixeira', 'Dias',
-            'Nunes', 'Batista', 'Freitas', 'Vieira', 'Rocha'
-        ];
-        return names[Math.floor(Math.random() * names.length)] + ' ' +
-            surnames[Math.floor(Math.random() * surnames.length)];
+        const names = ['Joao', 'Maria', 'Pedro', 'Ana', 'Carlos', 'Julia', 'Lucas', 'Mariana', 'Rafael', 'Beatriz', 'Andre', 'Fernanda', 'Gabriel', 'Larissa', 'Bruno', 'Camila', 'Diego', 'Patricia', 'Rodrigo', 'Natalia', 'Felipe', 'Aline', 'Gustavo', 'Isabela', 'Thiago', 'Renata', 'Eduardo', 'Carolina'];
+        const surnames = ['Silva', 'Santos', 'Oliveira', 'Souza', 'Lima', 'Costa', 'Ferreira', 'Gomes', 'Ribeiro', 'Almeida', 'Pereira', 'Rodrigues', 'Martins', 'Barbosa', 'Araujo', 'Cardoso', 'Melo', 'Correia', 'Teixeira', 'Dias', 'Nunes', 'Batista', 'Freitas', 'Vieira', 'Rocha'];
+        return names[Math.floor(Math.random() * names.length)] + ' ' + surnames[Math.floor(Math.random() * surnames.length)];
     }
 
     generateBirthdate() {
@@ -912,8 +933,25 @@ class App {
     }
 
     generateAddress() {
-        return StreetsData[Math.floor(Math.random() * StreetsData.length)] + ', ' +
-            Math.floor(Math.random() * 9999);
+        const street = (window.StreetsData && Array.isArray(window.StreetsData)) ? window.StreetsData[Math.floor(Math.random() * window.StreetsData.length)] : 'Rua Exemplo';
+        return street + ', ' + Math.floor(Math.random() * 9999);
+    }
+
+    generateCPF() {
+        const nums = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+        let sum = 0;
+        for (let i = 0; i < 9; i++) sum += nums[i] * (10 - i);
+        let d1 = 11 - (sum % 11);
+        if (d1 >= 10) d1 = 0;
+        nums.push(d1);
+
+        sum = 0;
+        for (let i = 0; i < 10; i++) sum += nums[i] * (11 - i);
+        let d2 = 11 - (sum % 11);
+        if (d2 >= 10) d2 = 0;
+        nums.push(d2);
+
+        return nums.slice(0, 3).join('') + '.' + nums.slice(3, 6).join('') + '.' + nums.slice(6, 9).join('') + '-' + nums.slice(9, 11).join('');
     }
 
     generatePerson() {
@@ -921,11 +959,10 @@ class App {
         const cpf = this.generateCPF();
         const birthdate = this.generateBirthdate();
         const address = this.generateAddress();
-
         const emailUser = name.toLowerCase().replace(' ', '') + Math.floor(Math.random() * 9999);
         const service = this.store.config.emailSvc || 'tuamae';
-
         let email, link;
+
         if (service === 'tuamae') {
             email = emailUser + '@tuamaeaquelaursa.com';
             link = `https://tuamaeaquelaursa.com/${emailUser}`;
@@ -934,32 +971,14 @@ class App {
             link = `https://firemail.com.br/${emailUser}`;
         }
 
-        const person = { name, cpf, birthdate, email, link, address };
-
-        this.currentPerson = person;
+        this.currentPerson = { name, cpf, birthdate, email, link, address };
         this.displayPerson(this.currentPerson);
     }
 
     regenerateField(field) {
         if (!this.currentPerson) return;
-
         if (field === 'name') {
-            const newName = this.generateName();
-            if (this.currentPerson.name !== newName) {
-                this.currentPerson.name = newName;
-
-                const emailUser = newName.toLowerCase().replace(' ', '') + Math.floor(Math.random() * 9999);
-                const service = this.store.config.emailSvc || 'tuamae';
-
-                if (service === 'tuamae') {
-                    this.currentPerson.email = emailUser + '@tuamaeaquelaursa.com';
-                    this.currentPerson.link = `https://tuamaeaquelaursa.com/${emailUser}`;
-                } else {
-                    this.currentPerson.email = emailUser + '@firemail.com.br';
-                    this.currentPerson.link = `https://firemail.com.br/${emailUser}`;
-                }
-                this.displayPerson(this.currentPerson);
-            }
+            this.generatePerson();
             return;
         }
 
@@ -970,65 +989,19 @@ class App {
         };
 
         if (generators[field]) {
-            const newValue = generators[field]();
-            if (this.currentPerson[field] !== newValue) {
-                this.currentPerson[field] = newValue;
-                this.displayPerson(this.currentPerson);
-            }
-        } else {
-            console.warn(`Campo desconhecido: ${field}`);
+            this.currentPerson[field] = generators[field]();
+            this.displayPerson(this.currentPerson);
         }
     }
 
-    
-    /**
-     * Generates valid CPF
-     */
-    generateCPF() {
-        const nums = Array.from({length: 9}, () => Math.floor(Math.random() * 10));
-        
-        // First digit
-        let sum = 0;
-        for (let i = 0; i < 9; i++) {
-            sum += nums[i] * (10 - i);
-        }
-        let d1 = 11 - (sum % 11);
-        if (d1 >= 10) d1 = 0;
-        nums.push(d1);
-        
-        // Second digit
-        sum = 0;
-        for (let i = 0; i < 10; i++) {
-            sum += nums[i] * (11 - i);
-        }
-        let d2 = 11 - (sum % 11);
-        if (d2 >= 10) d2 = 0;
-        nums.push(d2);
-        
-        return nums.slice(0,3).join('') + '.' + 
-               nums.slice(3,6).join('') + '.' + 
-               nums.slice(6,9).join('') + '-' + 
-               nums.slice(9,11).join('');
-    }
-    
-    /**
-     * Displays generated person
-     */
     displayPerson(person) {
         const container = document.getElementById('personContent');
         if (!container) return;
-
         container.innerHTML = '';
 
         const card = document.createElement('div');
         card.className = 'person-card';
-
-        const fieldMap = {
-            'Nome': 'name',
-            'CPF': 'cpf',
-            'Nascimento': 'birthdate',
-            'Endereço': 'address'
-        };
+        const fieldMap = { 'Nome': 'name', 'CPF': 'cpf', 'Nascimento': 'birthdate', 'Endereço': 'address' };
 
         const fields = [
             { label: 'Nome', value: person.name, id: 'personName', regenerate: true },
@@ -1059,27 +1032,20 @@ class App {
                 editBtn.className = 'btn-icon';
                 editBtn.textContent = '✏';
                 editBtn.addEventListener('click', () => this.changeEmailDomain());
+                valDiv.appendChild(editBtn);
 
                 const linkBtn = document.createElement('button');
                 linkBtn.className = 'btn-icon';
                 linkBtn.textContent = '↗';
-                linkBtn.id = 'personLinkBtn';
                 linkBtn.addEventListener('click', () => {
-                    const currentEmail = document.getElementById('personEmail').textContent;
-                    const emailUser = currentEmail.split('@')[0];
-                    const domain = currentEmail.split('@')[1];
-
-                    let currentLink;
-                    if (domain === 'tuamaeaquelaursa.com') {
-                        currentLink = `https://tuamaeaquelaursa.com/${emailUser}`;
-                    } else if (domain === 'firemail.com.br') {
-                        currentLink = `https://firemail.com.br/${emailUser}`;
-                    } else {
-                        currentLink = field.link;
-                    }
-                    window.open(currentLink, '_blank');
+                    const curr = document.getElementById('personEmail').textContent;
+                    const u = curr.split('@')[0];
+                    const d = curr.split('@')[1];
+                    let l = field.link;
+                    if (d === 'tuamaeaquelaursa.com') l = `https://tuamaeaquelaursa.com/${u}`;
+                    else if (d === 'firemail.com.br') l = `https://firemail.com.br/${u}`;
+                    window.open(l, '_blank');
                 });
-                valDiv.appendChild(editBtn);
                 valDiv.appendChild(linkBtn);
             }
 
@@ -1099,8 +1065,7 @@ class App {
         container.appendChild(card);
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.gap = '12px';
+        actions.style.cssText = 'display:flex;gap:12px;margin-top:16px;';
 
         const saveBtn = document.createElement('button');
         saveBtn.className = 'btn btn-primary';
@@ -1116,347 +1081,214 @@ class App {
         actions.appendChild(copyBtn);
         container.appendChild(actions);
     }
-    
-    /**
-     * Changes email domain
-     * Updates both the displayed email and the redirect link
-     */
+
     changeEmailDomain() {
-        const emailEl = document.getElementById('personEmail');
-        if (!emailEl) return;
-        
-        const current = emailEl.textContent;
-        const user = current.split('@')[0];
-        
-        let newEmail, newLink;
-        
-        if (current.includes('@tuamaeaquelaursa')) {
-            newEmail = user + '@firemail.com.br';
+        const el = document.getElementById('personEmail');
+        if (!el) return;
+        const curr = el.textContent;
+        const user = curr.split('@')[0];
+        let newMail, newLink;
+
+        if (curr.includes('@tuamaeaquelaursa')) {
+            newMail = user + '@firemail.com.br';
             newLink = `https://firemail.com.br/${user}`;
-        } else if (current.includes('@firemail')) {
-            newEmail = user + '@tuamaeaquelaursa.com';
-            newLink = `https://tuamaeaquelaursa.com/${user}`;
         } else {
-            // If it doesn't recognize the domain, it keeps it as it is
-            return;
+            newMail = user + '@tuamaeaquelaursa.com';
+            newLink = `https://tuamaeaquelaursa.com/${user}`;
         }
-        
-        // Updates the displayed email
-        emailEl.textContent = newEmail;
-        
-        // Updates the current person object to maintain consistency
+        el.textContent = newMail;
         if (this.currentPerson) {
-            this.currentPerson.email = newEmail;
+            this.currentPerson.email = newMail;
             this.currentPerson.link = newLink;
         }
     }
-    
-    /**
-     * Saves person
-     */
+
     async savePerson() {
-        // Checks authentication before saving person
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.savePerson());
             return;
         }
-        
-        if (!this.currentPerson) {
-            this.showToast('Nenhuma pessoa para salvar', 'error');
-            return;
-        }
+        if (!this.currentPerson) return;
 
         this.currentPerson.id = 'prs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
-        if (!this.store.vault.prs) {
-            this.store.vault.prs = [];
-        }
-        
+        if (!this.store.vault.prs) this.store.vault.prs = [];
         this.store.vault.prs.push(this.currentPerson);
+
         await this.store.saveVault();
-        
         this.showToast('Pessoa salva');
     }
-    
-    /**
-     * Copies person's data
-     */
-    copyPerson(person) {
-        const text = `Nome: ${person.name}\nCPF: ${person.cpf}\nNascimento: ${person.birthdate}\nEmail: ${person.email}\nEndereço: ${person.address}`;
-        
-        navigator.clipboard.writeText(text).then(() => {
-            this.showToast('Dados copiados');
-        });
+
+    copyPerson(p) {
+        const txt = `Nome: ${p.name}\nCPF: ${p.cpf}\nNascimento: ${p.birthdate}\nEmail: ${p.email}\nEndereço: ${p.address}`;
+        navigator.clipboard.writeText(txt).then(() => this.showToast('Dados copiados'));
     }
-    
-    /**
-     * Shows saved people
-     */
+
     showSavedPersons() {
-        // Checks authentication before showing saved people
         if (!this.store.isAuthenticated()) {
             this.checkAuthAndDo(() => this.showSavedPersons());
             return;
         }
-        
-        const container = document.getElementById('personContent');
-        if (!container) return;
-        
+        const c = document.getElementById('personContent');
+        if (!c) return;
+
         if (!this.store.vault.prs || this.store.vault.prs.length === 0) {
-            container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Nenhuma pessoa salva</p>';
+            c.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Nenhuma pessoa salva</p>';
             return;
         }
-        
-        container.innerHTML = '';
-        
-        this.store.vault.prs.forEach(person => {
+        c.innerHTML = '';
+
+        this.store.vault.prs.forEach(p => {
             const card = document.createElement('div');
             card.className = 'person-card';
-            
-            // Basic fields
-            const fields = [
-                { label: 'Nome', value: person.name },
-                { label: 'CPF', value: person.cpf },
-                { label: 'Nascimento', value: person.birthdate },
-                { label: 'Email', value: person.email }
-            ];
-            
-            fields.forEach(field => {
-                const div = document.createElement('div');
-                div.className = 'person-field';
-                
-                const label = document.createElement('span');
-                label.className = 'field-label';
-                label.textContent = field.label + ':';
-                
-                const value = document.createElement('span');
-                value.className = 'field-value';
-                value.textContent = field.value;
-                
-                div.appendChild(label);
-                div.appendChild(value);
-                card.appendChild(div);
+            const fields = [{ l: 'Nome', v: p.name }, { l: 'CPF', v: p.cpf }, { l: 'Email', v: p.email }];
+
+            fields.forEach(f => {
+                const d = document.createElement('div');
+                d.className = 'person-field';
+                d.innerHTML = `<span class="field-label">${f.l}:</span><span class="field-value">${f.v}</span>`;
+                card.appendChild(d);
             });
-            
-            // Actions
-            const actions = document.createElement('div');
-            actions.style.display = 'flex';
-            actions.style.gap = '12px';
-            actions.style.marginTop = '16px';
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'btn-icon';
-            copyBtn.textContent = '📋';
-            copyBtn.addEventListener('click', () => this.copyPerson(person));
-            
-            const delBtn = document.createElement('button');
-            delBtn.className = 'btn-icon';
-            delBtn.textContent = '🗑';
-            delBtn.addEventListener('click', () => this.deletePerson(person.id));
-            
-            actions.appendChild(copyBtn);
-            actions.appendChild(delBtn);
-            card.appendChild(actions);
-            
-            container.appendChild(card);
+
+            const acts = document.createElement('div');
+            acts.style.cssText = 'display:flex;gap:12px;margin-top:10px';
+
+            const cBtn = document.createElement('button');
+            cBtn.className = 'btn-icon';
+            cBtn.textContent = '📋';
+            cBtn.onclick = () => this.copyPerson(p);
+
+            const dBtn = document.createElement('button');
+            dBtn.className = 'btn-icon';
+            dBtn.textContent = '🗑';
+            dBtn.onclick = () => this.deletePerson(p.id);
+
+            acts.appendChild(cBtn);
+            acts.appendChild(dBtn);
+            card.appendChild(acts);
+            c.appendChild(card);
         });
     }
-    
-    /**
-     * Deletes person
-     */
+
     async deletePerson(id) {
-        // Checks authentication before deleting person
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.deletePerson(id));
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
         if (!confirm('Excluir pessoa?')) return;
-        
         this.store.vault.prs = this.store.vault.prs.filter(p => p.id !== id);
         await this.store.saveVault();
-        
         this.showSavedPersons();
         this.showToast('Pessoa excluída');
     }
-    
-    /**
-     * Loads notes
-     */
+
     loadNotes() {
-        // Checks authentication before loading notes
         if (!this.store.isAuthenticated()) {
-            const container = document.getElementById('notesList');
-            if (container) {
-                container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação necessária</p>';
-            }
+            const c = document.getElementById('notesList');
+            if (c) c.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Autenticação necessária</p>';
             return;
         }
-        
         const container = document.getElementById('notesList');
         if (!container || !this.store.vault) return;
-        
-        const notes = this.store.vault.notes ? 
-            this.store.vault.notes.filter(n => n.blk === this.currentBlock) : [];
-        
+
+        const notes = this.store.vault.notes ? this.store.vault.notes.filter(n => n.blk === this.currentBlock) : [];
         if (notes.length === 0) {
             container.innerHTML = '<p style="text-align:center;color:var(--txt-sec)">Nenhuma anotação salva</p>';
             return;
         }
-        
         container.innerHTML = '';
-        
+
         notes.forEach(note => {
             const card = document.createElement('div');
             card.className = 'note-card';
-            
-            // Header with title and buttons
+
             const header = document.createElement('div');
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
-            header.style.marginBottom = '8px';
-            
+            header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px';
+
             const title = document.createElement('div');
             title.className = 'note-title';
             title.textContent = note.title;
             title.style.cursor = 'pointer';
-            title.style.flex = '1';
-            title.addEventListener('click', () => this.showNoteDetail(note));
-            
-            // Action buttons
-            const actions = document.createElement('div');
-            actions.style.display = 'flex';
-            actions.style.gap = '8px';
-            
-            const editBtn = document.createElement('button');
-            editBtn.className = 'btn-icon';
-            editBtn.textContent = 'Editar';
-            editBtn.title = 'Editar';
-            editBtn.addEventListener('click', (e) => {
+            title.onclick = () => this.showNoteDetail(note);
+
+            const acts = document.createElement('div');
+            acts.style.cssText = 'display:flex;gap:8px';
+
+            const edit = document.createElement('button');
+            edit.className = 'btn-icon';
+            edit.textContent = 'Editar';
+            edit.onclick = (e) => {
                 e.stopPropagation();
-                this.editNote(note);
-            });
-            
-            const delBtn = document.createElement('button');
-            delBtn.className = 'btn-icon';
-            delBtn.textContent = 'Apagar';
-            delBtn.title = 'Excluir';
-            delBtn.addEventListener('click', (e) => {
+                this.openNoteModal(note);
+            };
+
+            const del = document.createElement('button');
+            del.className = 'btn-icon';
+            del.textContent = 'Apagar';
+            del.onclick = (e) => {
                 e.stopPropagation();
                 this.deleteNote(note.id);
-            });
-            
-            actions.appendChild(editBtn);
-            actions.appendChild(delBtn);
-            
+            };
+
+            acts.appendChild(edit);
+            acts.appendChild(del);
             header.appendChild(title);
-            header.appendChild(actions);
-            
+            header.appendChild(acts);
+
             const preview = document.createElement('div');
             preview.className = 'note-preview';
             preview.textContent = note.content.substring(0, 100) + '...';
-            preview.style.cursor = 'pointer';
-            preview.addEventListener('click', () => this.showNoteDetail(note));
-            
+            preview.onclick = () => this.showNoteDetail(note);
+
             card.appendChild(header);
             card.appendChild(preview);
             container.appendChild(card);
         });
     }
-    
-    /**
-     * Opens note modal
-     */
+
     openNoteModal(note = null) {
-        // Checks authentication before opening modal
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.openNoteModal(note));
-            return;
-        }
-        
         const select = document.getElementById('noteBlk');
-        const titleInput = document.getElementById('noteTitle');
-        const contentInput = document.getElementById('noteContent');
-        const modalTitle = document.querySelector('#noteModal .modal-title');
-        const form = document.getElementById('noteForm');
-        
-        if (!select || !titleInput || !contentInput || !form) return;
-        
-        // Defines edit or create mode
+        const tIn = document.getElementById('noteTitle');
+        const cIn = document.getElementById('noteContent');
+        const mTitle = document.querySelector('#noteModal .modal-title');
+        if (!select || !tIn) return;
+
         this.editingNoteId = note ? note.id : null;
-        
-        // Updates modal title
-        if (modalTitle) {
-            modalTitle.textContent = note ? 'Editar Anotação' : 'Nova Anotação';
-        }
-        
-        // Fills fields if editing
+        if (mTitle) mTitle.textContent = note ? 'Editar Anotação' : 'Nova Anotação';
+
         if (note) {
-            titleInput.value = note.title;
-            contentInput.value = note.content;
+            tIn.value = note.title;
+            cIn.value = note.content;
         } else {
-            titleInput.value = '';
-            contentInput.value = '';
+            tIn.value = '';
+            cIn.value = '';
         }
-        
-        // Fills block select
+
         select.innerHTML = '';
         this.store.vault.blks.forEach(blk => {
-            const option = document.createElement('option');
-            option.value = blk.id;
-            option.textContent = blk.name;
-            if (note && blk.id === note.blk) {
-                option.selected = true;
-            } else if (!note && blk.id === this.currentBlock) {
-                option.selected = true;
-            }
-            select.appendChild(option);
+            const opt = document.createElement('option');
+            opt.value = blk.id;
+            opt.textContent = blk.name;
+            if ((note && blk.id === note.blk) || (!note && blk.id === this.currentBlock)) opt.selected = true;
+            select.appendChild(opt);
         });
-        
         this.openModal('noteModal');
     }
-    
-    /**
-     * Saves note
-     */
+
     async saveNote(e) {
         e.preventDefault();
-        
-        // Checks authentication before saving note
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => {
-                const form = document.getElementById('noteForm');
-                if (form) form.requestSubmit();
-            });
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
+
         const blk = document.getElementById('noteBlk').value;
         const title = document.getElementById('noteTitle').value;
         const content = document.getElementById('noteContent').value;
-        
+
         if (!Security.validate(title, 100) || !Security.validate(content, 5000)) {
             this.showToast('Dados inválidos', 'error');
             return;
         }
-        
-        if (!this.store.vault.notes) {
-            this.store.vault.notes = [];
-        }
-        
-        // Checks if it is an edit or creation
+        if (!this.store.vault.notes) this.store.vault.notes = [];
+
         if (this.editingNoteId) {
-            // Edits existing note
-            const noteIndex = this.store.vault.notes.findIndex(n => n.id === this.editingNoteId);
-            if (noteIndex !== -1) {
-                this.store.vault.notes[noteIndex] = {
-                    id: this.editingNoteId,
-                    blk,
-                    title,
-                    content
-                };
+            const idx = this.store.vault.notes.findIndex(n => n.id === this.editingNoteId);
+            if (idx !== -1) {
+                this.store.vault.notes[idx] = { id: this.editingNoteId, blk, title, content };
                 await this.store.saveVault();
                 this.loadNotes();
                 this.closeModal('noteModal');
@@ -1466,117 +1298,67 @@ class App {
                 return;
             }
         }
-        
-        // Creates new note
         const note = {
-            id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-            blk,
-            title,
-            content
+            id: 'note_' + Date.now() + Math.random().toString(36).substr(2, 5),
+            blk, title, content
         };
-        
         this.store.vault.notes.push(note);
         await this.store.saveVault();
-        
         this.loadNotes();
         this.closeModal('noteModal');
         this.showToast('Anotação salva');
-        this.editingNoteId = null;
-        
         e.target.reset();
     }
-    
-    /**
-     * Edits note
-     */
-    editNote(note) {
-        this.openNoteModal(note);
-    }
-    
-    /**
-     * Deletes note
-     */
+
     async deleteNote(id) {
-        // Checks authentication before deleting note
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.deleteNote(id));
-            return;
-        }
-        
+        if (!this.store.isAuthenticated()) return;
         if (!confirm('Excluir anotação?')) return;
-        
         this.store.vault.notes = this.store.vault.notes.filter(n => n.id !== id);
         await this.store.saveVault();
-        
         this.loadNotes();
         this.showToast('Anotação excluída');
     }
-    
-    /**
-     * Shows note details
-     */
+
     showNoteDetail(note) {
-        // Checks authentication before showing details
-        if (!this.store.isAuthenticated()) {
-            this.checkAuthAndDo(() => this.showNoteDetail(note));
-            return;
-        }
-        
         alert(`${note.title}\n\n${note.content}`);
     }
-    
-    /**
-     * Saves settings
-     */
+
     saveConfig() {
-        const service = document.querySelector('input[name="emailSvc"]:checked');
-        if (!service) return;
-        
-        this.store.config.emailSvc = service.value;
+        const svc = document.querySelector('input[name="emailSvc"]:checked');
+        if (!svc) return;
+        this.store.config.emailSvc = svc.value;
         this.store.saveConfig();
-        
         this.closeModal('configModal');
         this.showToast('Configurações salvas');
     }
-    
-    /**
-     * Opens modal
-     */
+
     openModal(id) {
-        const modal = document.getElementById(id);
-        if (modal) modal.classList.add('active');
+        const m = document.getElementById(id);
+        if (m) {
+            m.style.display = 'flex';
+            setTimeout(() => m.classList.add('active'), 10);
+        }
     }
-    
-    /**
-     * Closes modal
-     */
+
     closeModal(id) {
-        // Clears edit state when closing note modal
         if (id === 'noteModal') {
             this.editingNoteId = null;
-            const form = document.getElementById('noteForm');
-            if (form) form.reset();
+            const f = document.getElementById('noteForm');
+            if (f) f.reset();
         }
-        
-        const modal = document.getElementById(id);
-        if (modal) modal.classList.remove('active');
+        const m = document.getElementById(id);
+        if (m) {
+            m.classList.remove('active');
+            setTimeout(() => m.style.display = 'none', 300);
+        }
     }
-    
-    /**
-     * Shows toast
-     */
-    showToast(message, type = 'success') {
-        const toast = document.getElementById('toast');
-        const msg = document.getElementById('toastMsg');
-        
-        if (!toast || !msg) return;
-        
-        msg.textContent = message;
-        toast.className = `toast show ${type}`;
-        
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 3000);
+
+    showToast(msg, type = 'success') {
+        const t = document.getElementById('toast');
+        const m = document.getElementById('toastMsg');
+        if (!t || !m) return;
+        m.textContent = msg;
+        t.className = `toast show ${type}`;
+        setTimeout(() => t.classList.remove('show'), 3000);
     }
 }
-
