@@ -2,9 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<script src="https://unpkg.com/kdbxweb@2.1.1/dist/kdbxweb.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; font-src 'self'; object-src 'none'; media-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; media-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';">
 <title>SecureVault</title>
 <link rel="stylesheet" href="styles/main.css">
 </head>
@@ -50,7 +51,7 @@
             <button class="btn btn-danger" id="logoutBtn">Sair</button>
         </div>
     </header>
-    
+
     <div class="container">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -66,7 +67,9 @@
             <div class="menu-item" data-section="notes">
                 <span class="menu-icon">▶</span> Salvar Coisas
             </div>
-            
+
+            <hr style="border:0; border-top:1px solid var(--border); margin: 10px 0;">
+
             <div class="blk-list">
                 <div class="blk-list-header">
                     <span style="font-size:14px;color:var(--txt-sec)">Blocos</span>
@@ -75,18 +78,26 @@
                 <div id="blkList"></div>
             </div>
         </aside>
-        
+
         <!-- Content Area -->
         <main class="content">
             <!-- Passwords Section -->
             <section class="section active" id="passwords">
                 <div class="section-header">
                     <h2 class="section-title">Senhas</h2>
-                    <button class="btn btn-primary" id="addPwdBtn">+ Nova Senha</button>
+                    <div style="display:flex; gap:10px;">
+                        <!-- Botão modificado: Sem emoji e com ID para o script -->
+                        <button class="btn btn-secondary" id="openDbModalBtn">
+                            Backup e Dados
+                        </button>
+                        <button class="btn btn-primary" id="addPwdBtn">
+                            + Nova Senha
+                        </button>
+                    </div>
                 </div>
                 <div id="pwdList"></div>
             </section>
-            
+
             <!-- Generator Section -->
             <section class="section" id="generator">
                 <div class="section-header">
@@ -125,7 +136,7 @@
                     <button class="btn btn-primary" id="genPwdBtn">Gerar Nova Senha</button>
                 </div>
             </section>
-            
+
             <!-- Persons Section -->
             <section class="section" id="persons">
                 <div class="section-header">
@@ -137,7 +148,7 @@
                 </div>
                 <div id="personContent"></div>
             </section>
-            
+
             <!-- Notes Section -->
             <section class="section" id="notes">
                 <div class="section-header">
@@ -267,11 +278,77 @@
     </div>
 </div>
 
+<!-- DB Modal (Backup & Restore) - Sem emojis -->
+<div class="modal" id="dbModal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3 class="modal-title">Gerenciar Banco de Dados</h3>
+            <button class="btn-icon modal-close" data-modal="dbModal">✕</button>
+        </div>
+
+        <!-- Export Section -->
+        <div style="margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
+            <h4 style="color:var(--txt-pri); margin-bottom:12px; display:flex; align-items:center;">
+                Exportar Dados
+            </h4>
+            <p style="font-size:13px; color:var(--txt-sec); margin-bottom:15px;">
+                Gere um arquivo de backup para guardar ou usar em outro aplicativo.
+            </p>
+            <form id="exportForm">
+                <div class="form-group">
+                    <label>Formato</label>
+                    <select class="select" id="exportFormat">
+                        <option value="kdbx">KeePass (.kdbx) - Criptografado</option>
+                        <option value="json_enc">Backup JSON - Criptografado</option>
+                        <option value="csv">Planilha CSV - Texto Plano (Inseguro)</option>
+                        <option value="json">JSON - Texto Plano (Inseguro)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="exportPwdGroup">
+                    <label>Senha de Proteção do Arquivo</label>
+                    <input type="password" class="input" id="exportFilePwd" placeholder="Senha para o novo arquivo">
+                </div>
+                <button type="button" class="btn btn-primary" id="btnExportAction" style="width:100%">
+                    Baixar Backup
+                </button>
+            </form>
+        </div>
+
+        <!-- Import Section -->
+        <div>
+            <h4 style="color:var(--txt-pri); margin-bottom:12px; display:flex; align-items:center;">
+                Importar Dados
+            </h4>
+            <form id="importForm">
+                <div class="form-group">
+                    <label>Arquivo (.kdbx, .csv, .json)</label>
+                    <input type="file" id="importFile" class="input">
+                </div>
+                <div class="form-group">
+                    <label>Modo</label>
+                    <select class="select" id="importMode">
+                        <option value="merge">Mesclar (Adicionar aos atuais)</option>
+                        <option value="replace">Substituir (Apagar tudo e importar)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="importPwdGroup" style="display:none;">
+                    <label>Senha do Arquivo</label>
+                    <input type="password" class="input" id="importFilePwd" placeholder="Senha original do arquivo">
+                </div>
+                <button type="button" class="btn btn-secondary" id="btnImportAction" style="width:100%">
+                    Importar
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Toast Container -->
 <div class="toast" id="toast">
     <span id="toastMsg"></span>
 </div>
 
+<!-- Main Scripts -->
 <script src="js/security.js"></script>
 <script src="js/crypto.js"></script>
 <script src="js/vaultStore.js"></script>
@@ -279,6 +356,58 @@
 <script src="js/data/pentestPayloads.js"></script>
 <script src="js/app.js"></script>
 <script src="js/main.js"></script>
+
+<script>
+    // Ensures this code runs after the page has loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        const dbBtn = document.getElementById('openDbModalBtn');
+        const dbModal = document.getElementById('dbModal');
+        const exportFormat = document.getElementById('exportFormat');
+        const exportPwdGroup = document.getElementById('exportPwdGroup');
+
+        // Function to open the modal
+        if(dbBtn && dbModal) {
+            dbBtn.addEventListener('click', function(e) {
+                e.preventDefault(); // Prevents default behavior
+                dbModal.classList.add('active'); // Adds class that displays the modal
+
+                // In case the CSS uses only display none/flex without classes:
+                dbModal.style.display = 'flex';
+            });
+        }
+
+        // Function to close the modal (X)
+        if (dbModal) {
+            const closeBtn = dbModal.querySelector('.modal-close');
+            if(closeBtn) {
+                closeBtn.addEventListener('click', function() {
+                    dbModal.classList.remove('active');
+                    dbModal.style.display = 'none';
+                });
+            }
+
+            // Close by clicking outside
+            window.addEventListener('click', function(e) {
+                if (e.target === dbModal) {
+                    dbModal.classList.remove('active');
+                    dbModal.style.display = 'none';
+                }
+            });
+        }
+
+        // Logic to hide/show password field on export
+        if(exportFormat && exportPwdGroup) {
+            exportFormat.addEventListener('change', function(e) {
+                const val = e.target.value;
+                if(val === 'csv' || val === 'json') {
+                    exportPwdGroup.style.display = 'none';
+                } else {
+                    exportPwdGroup.style.display = 'block';
+                }
+            });
+        }
+    });
+</script>
 
 </body>
 </html>
